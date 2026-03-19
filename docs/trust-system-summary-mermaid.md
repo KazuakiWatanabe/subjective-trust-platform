@@ -1,6 +1,6 @@
 # Trust Observation System v1 補足資料
 
-## 1ページ要約版 + Mermaid全体アーキテクチャ図
+## 1ページ要約版 + Mermaid全体アーキテクチャ図（カラー版）
 
 © 2026 Kazuaki Watanabe / 渡邉和明 — Licensed under [CC BY-NC 4.0](./LICENSE)
 
@@ -126,6 +126,23 @@ flowchart LR
     B3 --> B
     B4 --> B
     B5 --> B
+
+    style A fill:#4A90D9,stroke:#2C5F8A,color:#fff
+    style B fill:#5BA8C8,stroke:#3A7A9A,color:#fff
+    style C fill:#7BC8A4,stroke:#4A9A72,color:#fff
+    style D fill:#F5A623,stroke:#C4841A,color:#fff
+    style E fill:#E8744F,stroke:#B85A3D,color:#fff
+    style F fill:#9B59B6,stroke:#7D3F9A,color:#fff
+    style G fill:#3498DB,stroke:#2471A3,color:#fff
+    style H fill:#5BA8C8,stroke:#3A7A9A,color:#fff
+
+    style B1 fill:#E8F4FD,stroke:#4A90D9,color:#2C5F8A
+    style B2 fill:#E8F4FD,stroke:#4A90D9,color:#2C5F8A
+    style B3 fill:#E8F4FD,stroke:#4A90D9,color:#2C5F8A
+    style B4 fill:#E8F4FD,stroke:#4A90D9,color:#2C5F8A
+    style B5 fill:#E8F4FD,stroke:#4A90D9,color:#2C5F8A
+
+    style Data fill:#F0F8FF,stroke:#4A90D9,color:#2C5F8A
 ```
 
 ## 2.2 システム構成図（PoC向け）
@@ -134,22 +151,22 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph StoreOps["店舗運用"]
+    subgraph StoreOps["🏬 店舗運用"]
         S1[スタッフ接客]
         S2[接客タグ入力<br/>最小2タップ・10秒以内]
         S4[POS / 会員データ<br/>日次バッチ連携]
     end
 
-    subgraph CustomerFB["顧客フィードバック"]
+    subgraph CustomerFB["💬 顧客フィードバック"]
         S3[来店後ミニアンケート<br/>LINE翌日配信・3問]
     end
 
-    subgraph Sources["外部・周辺データ"]
+    subgraph Sources["🌐 外部・周辺データ"]
         X1[問い合わせ / クレーム]
         X2[Google口コミ等]
     end
 
-    subgraph Platform["解釈層（Trust Observation Platform）"]
+    subgraph Platform["🧠 解釈層（Trust Observation Platform）"]
         P1[イベント収集パイプライン]
         P2[TrustEvent生成<br/>ルールベース + AI]
         P3[AI解釈・要約<br/>Claude API Sonnet]
@@ -158,7 +175,7 @@ flowchart TB
         P6[改善提案生成]
     end
 
-    subgraph Outputs["出力"]
+    subgraph Outputs["📊 出力"]
         O1[店舗ダッシュボード<br/>Next.js]
         O2[店長週次レポート<br/>Slack / メール]
         O3[本部横断分析<br/>Looker Studio]
@@ -185,6 +202,31 @@ flowchart TB
     P5 --> O2
     P6 --> O4
     O4 -.->|改善ループ| S1
+
+    style StoreOps fill:#EBF5FB,stroke:#2E86C1,color:#1A5276
+    style CustomerFB fill:#FEF9E7,stroke:#F39C12,color:#7D6608
+    style Sources fill:#F5EEF8,stroke:#8E44AD,color:#6C3483
+    style Platform fill:#FDEBD0,stroke:#E67E22,color:#A04000
+    style Outputs fill:#E8F8F5,stroke:#1ABC9C,color:#0E6655
+
+    style S1 fill:#AED6F1,stroke:#2E86C1,color:#1A5276
+    style S2 fill:#AED6F1,stroke:#2E86C1,color:#1A5276
+    style S4 fill:#AED6F1,stroke:#2E86C1,color:#1A5276
+    style S3 fill:#FAD7A0,stroke:#F39C12,color:#7D6608
+    style X1 fill:#D7BDE2,stroke:#8E44AD,color:#6C3483
+    style X2 fill:#D7BDE2,stroke:#8E44AD,color:#6C3483
+
+    style P1 fill:#F5CBA7,stroke:#E67E22,color:#A04000
+    style P2 fill:#F5CBA7,stroke:#E67E22,color:#A04000
+    style P3 fill:#F5CBA7,stroke:#E67E22,color:#A04000
+    style P4 fill:#F5CBA7,stroke:#E67E22,color:#A04000
+    style P5 fill:#F5CBA7,stroke:#E67E22,color:#A04000
+    style P6 fill:#F5CBA7,stroke:#E67E22,color:#A04000
+
+    style O1 fill:#A3E4D7,stroke:#1ABC9C,color:#0E6655
+    style O2 fill:#A3E4D7,stroke:#1ABC9C,color:#0E6655
+    style O3 fill:#A3E4D7,stroke:#1ABC9C,color:#0E6655
+    style O4 fill:#A3E4D7,stroke:#1ABC9C,color:#0E6655
 ```
 
 ## 2.3 解釈層を強調した図
@@ -201,7 +243,7 @@ flowchart LR
     D6 --> D7[店舗運用実行]
     D7 --> D1
 
-    subgraph Trust["5つの信頼次元"]
+    subgraph Trust["🎯 5つの信頼次元"]
         T1[商品信頼]
         T2[接客信頼]
         T3[提案信頼]
@@ -209,7 +251,7 @@ flowchart LR
         T5[物語信頼]
     end
 
-    subgraph Subjective["主観の三層"]
+    subgraph Subjective["🧩 主観の三層"]
         M1[Trait — 長期的価値観]
         M2[State — 来店時の状態]
         M3[Meta — 違和感の履歴]
@@ -224,6 +266,26 @@ flowchart LR
     M1 -.->|解釈の手がかり| D4
     M2 -.->|解釈の手がかり| D4
     M3 -.->|解釈の手がかり| D4
+
+    style D1 fill:#85C1E9,stroke:#2471A3,color:#1A5276
+    style D2 fill:#85C1E9,stroke:#2471A3,color:#1A5276
+    style D3 fill:#7DCEA0,stroke:#27AE60,color:#1E8449
+    style D4 fill:#F5A623,stroke:#D4881E,color:#fff,stroke-width:3px
+    style D5 fill:#E74C3C,stroke:#C0392B,color:#fff
+    style D6 fill:#9B59B6,stroke:#7D3C98,color:#fff
+    style D7 fill:#3498DB,stroke:#2471A3,color:#fff
+
+    style Trust fill:#FDF2E9,stroke:#E74C3C,color:#922B21
+    style T1 fill:#FADBD8,stroke:#E74C3C,color:#922B21
+    style T2 fill:#FADBD8,stroke:#E74C3C,color:#922B21
+    style T3 fill:#FADBD8,stroke:#E74C3C,color:#922B21
+    style T4 fill:#FADBD8,stroke:#E74C3C,color:#922B21
+    style T5 fill:#FADBD8,stroke:#E74C3C,color:#922B21
+
+    style Subjective fill:#F4ECF7,stroke:#8E44AD,color:#6C3483
+    style M1 fill:#D7BDE2,stroke:#8E44AD,color:#6C3483
+    style M2 fill:#D7BDE2,stroke:#8E44AD,color:#6C3483
+    style M3 fill:#D7BDE2,stroke:#8E44AD,color:#6C3483
 ```
 
 ## 2.4 データモデル関係図（簡略版）

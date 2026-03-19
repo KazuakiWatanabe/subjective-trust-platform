@@ -66,13 +66,20 @@
 
 ```mermaid
 flowchart LR
-    A["1. 観測層<br/>接点データの収集"] --> B["2. 解釈層<br/>主観シグナルの推定"]
-    B --> C["3. 信頼状態層<br/>信頼スコアの算出"]
-    C --> D["4. 判断層<br/>介入方針の立案"]
-    D --> E["5. 介入層<br/>施策の実行"]
-    E --> F["6. 学習層<br/>結果観測・モデル更新"]
+    A["🔍 1. 観測層<br/>接点データの収集"] --> B["🧠 2. 解釈層<br/>主観シグナルの推定"]
+    B --> C["📊 3. 信頼状態層<br/>信頼スコアの算出"]
+    C --> D["🤖 4. 判断層<br/>介入方針の立案"]
+    D --> E["⚡ 5. 介入層<br/>施策の実行"]
+    E --> F["🔄 6. 学習層<br/>結果観測・モデル更新"]
     F -.->|フィードバック| C
     F -.->|方針更新| D
+
+    style A fill:#AED6F1,stroke:#2E86C1,color:#1A5276
+    style B fill:#FAD7A0,stroke:#F39C12,color:#7D6608
+    style C fill:#F5B7B1,stroke:#E74C3C,color:#922B21
+    style D fill:#D7BDE2,stroke:#8E44AD,color:#6C3483
+    style E fill:#A3E4D7,stroke:#1ABC9C,color:#0E6655
+    style F fill:#F5CBA7,stroke:#E67E22,color:#A04000
 ```
 
 Phase 1では観測層・解釈層・信頼状態層を構築し、Phase 3以降で判断層（Agent構成）・介入層・学習層を段階的に接続する。

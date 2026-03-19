@@ -28,39 +28,39 @@
 
 ```mermaid
 flowchart TD
-    subgraph L1["1. 観測層 — Data Input"]
+    subgraph L1["🔍 1. 観測層 — Data Input"]
         A1["店舗接点<br/>接客タグ / POS / 来店履歴"]
         A2["顧客の声<br/>アンケート / レビュー / 問い合わせ"]
         A3["業務イベント<br/>返品 / クレーム / 欠品"]
     end
 
-    subgraph L2["2. 解釈層 — Interpretation"]
+    subgraph L2["🧠 2. 解釈層 — Interpretation"]
         B1["イベント正規化"]
         B2["主観シグナル推定<br/>安心 / 納得 / 違和感 / 不信"]
         B3["文脈補完<br/>顧客属性 / 過去履歴 / State推定"]
     end
 
-    subgraph L3["3. 信頼状態層 — Trust State"]
+    subgraph L3["📊 3. 信頼状態層 — Trust State"]
         C1["TrustEvent生成"]
         C2["信頼スコア算出<br/>5次元 + 総合"]
         C3["リスクシグナル<br/>離反兆候 / 毀損継続"]
     end
 
-    subgraph L4["4. 判断層 — Agent"]
+    subgraph L4["🤖 4. 判断層 — Agent"]
         D1["Reader<br/>状況の読み取り"]
         D2["Planner<br/>介入方針の立案"]
         D3["Validator<br/>制約・ルール検証"]
         D4["Action Selector<br/>施策決定"]
     end
 
-    subgraph L5["5. 介入層 — Action"]
+    subgraph L5["⚡ 5. 介入層 — Action"]
         E1["店舗向け<br/>改善提案 / アラート"]
         E2["顧客向け<br/>フォロー / リテンション"]
         E3["運営改善<br/>品質 / 説明 / 導線"]
         E4["エスカレーション<br/>人手対応"]
     end
 
-    subgraph L6["6. 学習層 — Learning"]
+    subgraph L6["🔄 6. 学習層 — Learning"]
         F1["結果観測<br/>再来店 / 継続率 / 評価変化"]
         F2["信頼モデル更新"]
         F3["Agent方針更新"]
@@ -96,6 +96,39 @@ flowchart TD
     F2 --> C2
     F1 --> F3
     F3 --> D2
+
+    style L1 fill:#EBF5FB,stroke:#2E86C1,color:#1A5276
+    style L2 fill:#FEF9E7,stroke:#F39C12,color:#7D6608
+    style L3 fill:#FDEDEC,stroke:#E74C3C,color:#922B21
+    style L4 fill:#F5EEF8,stroke:#8E44AD,color:#6C3483
+    style L5 fill:#E8F8F5,stroke:#1ABC9C,color:#0E6655
+    style L6 fill:#FDF2E9,stroke:#E67E22,color:#A04000
+
+    style A1 fill:#AED6F1,stroke:#2E86C1,color:#1A5276
+    style A2 fill:#AED6F1,stroke:#2E86C1,color:#1A5276
+    style A3 fill:#AED6F1,stroke:#2E86C1,color:#1A5276
+
+    style B1 fill:#FAD7A0,stroke:#F39C12,color:#7D6608
+    style B2 fill:#FAD7A0,stroke:#F39C12,color:#7D6608
+    style B3 fill:#FAD7A0,stroke:#F39C12,color:#7D6608
+
+    style C1 fill:#F5B7B1,stroke:#E74C3C,color:#922B21
+    style C2 fill:#F5B7B1,stroke:#E74C3C,color:#922B21
+    style C3 fill:#F5B7B1,stroke:#E74C3C,color:#922B21
+
+    style D1 fill:#D7BDE2,stroke:#8E44AD,color:#6C3483
+    style D2 fill:#D7BDE2,stroke:#8E44AD,color:#6C3483
+    style D3 fill:#D7BDE2,stroke:#8E44AD,color:#6C3483
+    style D4 fill:#D7BDE2,stroke:#8E44AD,color:#6C3483
+
+    style E1 fill:#A3E4D7,stroke:#1ABC9C,color:#0E6655
+    style E2 fill:#A3E4D7,stroke:#1ABC9C,color:#0E6655
+    style E3 fill:#A3E4D7,stroke:#1ABC9C,color:#0E6655
+    style E4 fill:#A3E4D7,stroke:#1ABC9C,color:#0E6655
+
+    style F1 fill:#F5CBA7,stroke:#E67E22,color:#A04000
+    style F2 fill:#F5CBA7,stroke:#E67E22,color:#A04000
+    style F3 fill:#F5CBA7,stroke:#E67E22,color:#A04000
 ```
 
 ### 2.2 設計書v1との対応
