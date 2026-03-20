@@ -1,0 +1,44 @@
+[
+  {
+    "trust_dimension": "service",
+    "sentiment": "positive",
+    "severity": 1,
+    "theme_tags": ["丁寧な接客", "安心感"],
+    "summary": "スタッフの丁寧な対応に安心感を得た",
+    "interpretation": "顧客は相談しやすい雰囲気と的確な回答に信頼を感じたと推定される",
+    "subjective_hints": {
+      "trait_signal": "対面相談を重視する傾向",
+      "state_signal": null,
+      "meta_signal": null
+    },
+    "confidence": 0.85
+  },
+  {
+    "trust_dimension": "product",
+    "sentiment": "negative",
+    "severity": 2,
+    "theme_tags": ["品質不満", "期待はずれ"],
+    "summary": "商品の品質が期待を下回った",
+    "interpretation": "事前の商品説明と実物の印象に乖離があり不満を感じたと推定される",
+    "subjective_hints": {
+      "trait_signal": "品質重視の傾向",
+      "state_signal": "ギフト選びで慎重になっていた",
+      "meta_signal": null
+    },
+    "confidence": 0.72
+  },
+  {
+    "trust_dimension": "proposal",
+    "sentiment": "negative",
+    "severity": 3,
+    "theme_tags": ["押し売り感", "不快"],
+    "summary": "強引な提案に不快感を覚えた",
+    "interpretation": "顧客の意向を確認せずに高額商品を勧めたことで押し売り感を感じたと推定される",
+    "subjective_hints": {
+      "trait_signal": "押し売りを嫌う傾向",
+      "state_signal": "下見のつもりだった",
+      "meta_signal": "以前も同様の体験があった"
+    },
+    "confidence": 0.55
+  }
+]
