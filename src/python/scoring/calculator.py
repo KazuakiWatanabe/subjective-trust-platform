@@ -19,6 +19,7 @@ Note:
 """
 # TODO(phase2): C# 移管予定 — スコア算出サービスは C# ドメインサービスに移行する
 
+import enum
 import math
 import uuid
 from datetime import date, datetime, timezone
@@ -36,6 +37,35 @@ _ALL_DIMENSIONS: list[str] = ["product", "service", "proposal", "operation", "st
 
 # デフォルトの重みマッピング（event_type が不明な場合のフォールバック）
 _DEFAULT_WEIGHT: float = 1.0
+
+
+class ColdStartPhase(enum.Enum):
+    """コールドスタートフェーズ（設計書 §2.5）。
+
+    ACCUMULATING: 導入〜4週目。スコア算出を行わない。
+    TRIAL: 5〜12週目。スコア算出するが参考値（is_reliable=False）。
+    PRODUCTION: 13週目〜。本運用。
+    """
+
+    ACCUMULATING = "accumulating"
+    TRIAL = "trial"
+    PRODUCTION = "production"
+
+
+def determine_cold_start_phase(weeks_since_launch: int) -> ColdStartPhase:
+    """導入からの経過週数に基づきコールドスタートフェーズを判定する。
+
+    Args:
+        weeks_since_launch: 導入からの経過週数
+
+    Returns:
+        ColdStartPhase
+    """
+    if weeks_since_launch <= 4:
+        return ColdStartPhase.ACCUMULATING
+    if weeks_since_launch <= 12:
+        return ColdStartPhase.TRIAL
+    return ColdStartPhase.PRODUCTION
 
 
 def _weeks_between(event_date: datetime, reference_date: date) -> int:
@@ -124,6 +154,7 @@ class TrustScoreCalculator:
         store_id: uuid.UUID,
         events: list[dict[str, Any]],
         snapshot_date: date,
+        weeks_since_launch: int | None = None,
     ) -> dict[str, Any]:
         """週次スナップショットを算出する。
 
@@ -131,10 +162,37 @@ class TrustScoreCalculator:
             store_id: 店舗 ID
             events: 全次元の TrustEvent 辞書リスト
             snapshot_date: スナップショット日付
+            weeks_since_launch: 導入からの経過週数（None の場合は本運用扱い）
 
         Returns:
             TrustScoreSnapshot テーブルに挿入可能な辞書
         """
+        total_event_count = len(events)
+
+        # コールドスタートフェーズ判定
+        if weeks_since_launch is not None:
+            phase = determine_cold_start_phase(weeks_since_launch)
+        else:
+            phase = ColdStartPhase.PRODUCTION
+
+        # 蓄積期: スコア算出を行わず event_count のみ返却
+        if phase == ColdStartPhase.ACCUMULATING:
+            return {
+                "snapshot_id": uuid.uuid4(),
+                "target_type": "store",
+                "target_id": store_id,
+                "snapshot_date": snapshot_date,
+                "product_score": None,
+                "service_score": None,
+                "proposal_score": None,
+                "operation_score": None,
+                "story_score": None,
+                "overall_score": None,
+                "event_count": total_event_count,
+                "is_reliable": False,
+                "cold_start_phase": phase.value,
+            }
+
         # 次元ごとにイベントを分類
         events_by_dim: dict[str, list[dict[str, Any]]] = {
             dim: [] for dim in _ALL_DIMENSIONS
@@ -158,8 +216,11 @@ class TrustScoreCalculator:
         )
 
         # is_reliable 判定
-        total_event_count = len(events)
-        is_reliable = total_event_count >= _RELIABLE_EVENT_THRESHOLD
+        # 試行期は常に False、本運用はイベント数で判定
+        if phase == ColdStartPhase.TRIAL:
+            is_reliable = False
+        else:
+            is_reliable = total_event_count >= _RELIABLE_EVENT_THRESHOLD
 
         return {
             "snapshot_id": uuid.uuid4(),
@@ -174,4 +235,5 @@ class TrustScoreCalculator:
             "overall_score": round(overall, 2),
             "event_count": total_event_count,
             "is_reliable": is_reliable,
+            "cold_start_phase": phase.value,
         }
