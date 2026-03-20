@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 
+from src.python.api.routers.feedback import router as feedback_router
 from src.python.api.routers.visits import router as visits_router
 from src.python.config import get_settings
 from src.python.db.session import engine
@@ -29,6 +30,7 @@ app = FastAPI(
 
 
 app.include_router(visits_router)
+app.include_router(feedback_router)
 
 
 @app.get("/health")
