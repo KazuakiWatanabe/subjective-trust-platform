@@ -1,0 +1,41 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.7, pytest-9.0.2, pluggy-1.6.0 -- C:\Git\subjective-trust-platform\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Git\subjective-trust-platform
+configfile: pyproject.toml
+plugins: anyio-4.12.1, asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 30 items
+
+tests/python/unit/test_config.py::TestSettings::test_デフォルト設定が正しく読み込まれる PASSED [  3%]
+tests/python/unit/test_config.py::TestSettings::test_環境変数から設定を読み込める PASSED [  6%]
+tests/python/unit/test_config.py::TestSettings::test_AI_BACKENDの全選択肢が有効[mock] PASSED [ 10%]
+tests/python/unit/test_config.py::TestSettings::test_AI_BACKENDの全選択肢が有効[anthropic] PASSED [ 13%]
+tests/python/unit/test_config.py::TestSettings::test_AI_BACKENDの全選択肢が有効[bedrock] PASSED [ 16%]
+tests/python/unit/test_config.py::TestSettings::test_不正なAI_BACKENDはバリデーションエラー PASSED [ 20%]
+tests/python/unit/test_config.py::TestSettings::test_env_exampleに必要な変数が記載されている PASSED [ 23%]
+tests/python/unit/test_health.py::TestHealthCheck::test_ヘルスチェックが正常応答する PASSED [ 26%]
+tests/python/unit/test_interpretation_client.py::TestBaseInterpretationClient::test_抽象クラスは直接インスタンス化できない PASSED [ 30%]
+tests/python/unit/test_interpretation_client.py::TestBaseInterpretationClient::test_interpretメソッドが抽象定義されている PASSED [ 33%]
+tests/python/unit/test_interpretation_client.py::TestMockInterpretationClient::test_モッククライアントがTrustInterpretationを返す PASSED [ 36%]
+tests/python/unit/test_interpretation_client.py::TestMockInterpretationClient::test_モッククライアントのレスポンスが有効なスキーマ PASSED [ 40%]
+tests/python/unit/test_interpretation_client.py::TestMockInterpretationClient::test_モッククライアントは外部APIを呼び出さない PASSED [ 43%]
+tests/python/unit/test_interpretation_client.py::TestAnthropicClient::test_AnthropicClientが基底クラスを継承している PASSED [ 46%]
+tests/python/unit/test_interpretation_client.py::TestAnthropicClient::test_AnthropicClientがSDKを呼び出す PASSED [ 50%]
+tests/python/unit/test_interpretation_client.py::TestBedrockClient::test_BedrockClientが基底クラスを継承している PASSED [ 53%]
+tests/python/unit/test_interpretation_client.py::TestGetInterpretationClient::test_mock指定でMockClientが返る PASSED [ 56%]
+tests/python/unit/test_interpretation_client.py::TestGetInterpretationClient::test_anthropic指定でAnthropicClientが返る PASSED [ 60%]
+tests/python/unit/test_interpretation_client.py::TestGetInterpretationClient::test_bedrock指定でBedrockClientが返る PASSED [ 63%]
+tests/python/unit/test_models.py::TestAllTablesExist::test_全テーブルがメタデータに登録されている PASSED [ 66%]
+tests/python/unit/test_models.py::TestAllTablesExist::test_各モデルのテーブル名が正しい PASSED [ 70%]
+tests/python/unit/test_models.py::TestTrustEventIndex::test_複合インデックスが定義されている PASSED [ 73%]
+tests/python/unit/test_models.py::TestTrustEventIndex::test_複合インデックスのカラムが正しい PASSED [ 76%]
+tests/python/unit/test_models.py::TestTrustScoreSnapshotConstraint::test_ユニーク制約が定義されている PASSED [ 80%]
+tests/python/unit/test_models.py::TestFeedbackConstraints::test_visit_idにユニーク制約がある PASSED [ 83%]
+tests/python/unit/test_models.py::TestFeedbackConstraints::test_scoreカラムのCHECK制約が定義されている PASSED [ 86%]
+tests/python/unit/test_models.py::TestTrustEventColumns::test_設計書の全カラムが定義されている PASSED [ 90%]
+tests/python/unit/test_models.py::TestTrustEventColumns::test_severityのCHECK制約が定義されている PASSED [ 93%]
+tests/python/unit/test_models.py::TestModelInstantiation::test_Storeインスタンスが生成できる PASSED [ 96%]
+tests/python/unit/test_models.py::TestModelInstantiation::test_TrustEventインスタンスが生成できる PASSED [100%]
+
+============================= 30 passed in 3.46s ==============================
