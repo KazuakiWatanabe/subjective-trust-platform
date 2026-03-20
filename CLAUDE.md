@@ -1,53 +1,63 @@
 # CLAUDE.md
-# subjective-trust-platform — Claude Code 向け実装ガイド
 
-このファイルは Claude Code がリポジトリを開いたときに自動的に読み込まれる。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 **作業を開始する前に必ずこのファイルと AGENTS.md を読むこと。**
 **AGENTS.md が最上位ルールであり、本ファイルはその補足である。**
 
 ---
 
-## このプロジェクトについて
+## プロジェクト概要
 
-実店舗向けブランド信頼観測システム。顧客主観（Trait / State / Meta）を構造的に観測・解釈し、
-5次元の信頼スコアを算出して改善ループを回す。
+実店舗向けブランド信頼観測システム。顧客主観（Trait / State / Meta）を構造的に観測・AI解釈し、
+5次元の信頼スコア（商品・接客・提案・運営・物語）を算出して改善ループを回す。
 
-詳細な背景・設計は以下を参照すること（作業前に関連する章を必ず読むこと）。
+### アーキテクチャ（6層構造）
+
+```
+観測層 → 解釈層 → 信頼状態層 → 判断層 → 介入層 → 学習層
+(Phase 1 で実装)                (Phase 3 以降)
+```
+
+- **観測層**: POS連携・接客タグ入力・ミニアンケートで接点データを収集
+- **解釈層**: Claude API/Bedrock で自由記述を解釈し、5次元×sentiment×severity に構造化
+- **信頼状態層**: TrustEvent を集計し、recency_decay 付きで次元別スコアを算出
+
+### データフロー
+
+```
+接客タグ/アンケート → Visit/Feedback → AI解釈パイプライン → TrustEvent → スコア算出 → TrustScoreSnapshot
+```
+
+AI解釈は日次バッチで実行。`confidence < 0.6` の結果は `needs_review = True` で人間レビューに回す。
+
+---
+
+## 現在のフェーズ：Phase 1（Python 単独）
+
+**`src/csharp/` への書き込みは禁止。** 実装はすべて Python で行う。
+
+Phase 2 移管予定のコンポーネントには `# TODO(phase2): C# 移管予定 — 〇〇` コメントを残すこと。
+
+Python に残る処理: AI 解釈・バッチ集計・分析スクリプト
+Phase 2 で C# へ移管: REST API・業務ロジック・スコア算出・DB 操作
+
+### 実装タスク順序
+
+`task/task-phase1.md` に T-00〜T-15 のタスク一覧がある。T-00（Docker環境構築）が全タスクの前提。
+
+---
+
+## ドキュメント参照表
 
 | ドキュメント | 参照すべきタイミング |
 |---|---|
 | `task/task-phase1.md` | 実装タスク一覧・AC・作業手順の確認 |
 | `docs/trust-observation-system-v1.md` | データモデル・AI解釈・スコア算出・KPI の実装時 |
 | `docs/whitepaper-brand-trust.md` | 信頼の概念・5次元・Trait/State/Meta の理解が必要な時 |
-| `docs/language-selection.md` | 言語・技術選定の判断根拠を確認したい時 |
+| `docs/language_selection_report.md` | 言語・技術選定の判断根拠を確認したい時 |
+| `docs/architecture-overview.md` | Phase 3 以降の全体構造・Agent 構成の確認 |
 | `AGENTS.md` | コーディング規約・テスト規約・セキュリティ規約・禁止事項の確認 |
-
----
-
-## 現在のフェーズ：Phase 1
-
-**Python 単独実装。`src/csharp/` への書き込みは禁止。**
-
-Phase 2 以降で C# 業務本体への移管を予定しているコンポーネントには、
-以下のコメントを必ず残すこと。
-
-```python
-# TODO(phase2): C# 移管予定 — スコア算出サービス
-```
-
----
-
-## 作業開始時のチェックリスト
-
-新しいタスクに着手する前に以下を確認すること。
-
-- [ ] `AGENTS.md` のセキュリティルール・禁止事項を確認した
-- [ ] 対象タスクの `ac_ids` と `source_spec` を確認した
-- [ ] 現在 Phase 1 であることを確認した（`src/csharp/` は触らない）
-- [ ] テストタスクの場合、`target_files` と `target_functions` が 2 つ以内であることを確認した
-- [ ] AI 解釈に関わるタスクの場合、`confidence` チェックと `needs_review` の実装を含めた
-- [ ] 新規 `import` を追加する場合、`pyproject.toml` 記載済みであることを確認した
-- [ ] **auto-accept モードをオフにして作業していることを確認した**
 
 ---
 
@@ -66,6 +76,10 @@ ruff check src/python/ && ruff format src/python/
 pytest tests/python/unit/                        # ユニットテストのみ
 pytest tests/python/ -m integration              # 統合テスト（DB 必要）
 pytest tests/python/ --cov=src/python --cov-report=term-missing  # カバレッジ付き
+
+# 単一テストファイル / 単一テスト関数の実行
+pytest tests/python/unit/test_scoring.py -v
+pytest tests/python/unit/test_scoring.py::test_関数名 -v
 
 # エビデンス保存（タスク完了時に必ず実行）
 pytest tests/python/unit/        -v > tests/python/evidence/unit_result.txt
@@ -87,27 +101,19 @@ python -m src.python.interpretation.pipeline --date=2026-03-20
 
 ---
 
-## よく参照する仕様箇所
+## 作業開始時のチェックリスト
 
-### AI 解釈出力スキーマ（設計書 §3.3）
+- [ ] `AGENTS.md` のセキュリティルール・禁止事項を確認した
+- [ ] 対象タスクの `ac_ids` と `source_spec` を `task/task-phase1.md` で確認した
+- [ ] 現在 Phase 1 であることを確認した（`src/csharp/` は触らない）
+- [ ] テストタスクの場合、`target_files` と `target_functions` が 2 つ以内であることを確認した
+- [ ] AI 解釈に関わるタスクの場合、`confidence` チェックと `needs_review` の実装を含めた
+- [ ] 新規 `import` を追加する場合、`pyproject.toml` 記載済みであることを確認した
+- [ ] **auto-accept モードをオフにして作業していることを確認した**
 
-```python
-# このスキーマは変更禁止
-{
-    "trust_dimension": "service | product | proposal | operation | story",
-    "sentiment": "positive | negative | neutral",
-    "severity": 1 | 2 | 3,
-    "theme_tags": [...],
-    "summary": "1文の要約",
-    "interpretation": "なぜそう感じたと推定されるかの1文解釈",
-    "subjective_hints": {
-        "trait_signal": str | None,
-        "state_signal": str | None,
-        "meta_signal": str | None
-    },
-    "confidence": 0.0〜1.0  # < 0.6 → needs_review = True
-}
-```
+---
+
+## よく参照する仕様（詳細は設計書を参照）
 
 ### 信頼スコア算出式（設計書 §2.4）
 
@@ -117,18 +123,6 @@ dimension_score = base_score(50)
   - Σ(negative_event_weight × severity × recency_decay)
 
 recency_decay: 直近4週=1.0 / 5〜8週=0.7 / 9〜12週=0.4 / それ以前=0.1
-```
-
-### 主要テーブルのインデックス（設計書 §4.2）
-
-```sql
--- TrustEvent
-CREATE INDEX idx_trust_event_store_dim_date
-  ON trust_event (store_id, trust_dimension, detected_at);
-
--- TrustScoreSnapshot
-CREATE UNIQUE INDEX uq_trust_score_snapshot
-  ON trust_score_snapshot (target_type, target_id, snapshot_date);
 ```
 
 ### アラート閾値（設計書 §7.1）
@@ -144,32 +138,20 @@ CREATE UNIQUE INDEX uq_trust_score_snapshot
 
 ## 迷ったときの判断基準
 
-**Q. この処理は Python に残すべきか C# に移管予定か？**
-→ AI 解釈・バッチ集計・分析スクリプトは Python。REST API・業務ロジック・スコア算出・DB 操作は Phase 2 で C# へ移管予定。Phase 1 では Python で実装しつつ `# TODO(phase2):` コメントを残す。
-
 **Q. AI の解釈結果を DB に書いてよいか？**
-→ `generated_by = "ai"` を必ず記録し、`confidence < 0.6` なら `needs_review = True` をセットすること。確定事実として扱うコードは書かない。
+→ `generated_by = "ai"` を必ず記録し、`confidence < 0.6` なら `needs_review = True` をセット。確定事実として扱うコードは書かない。
 
 **Q. 個人を特定できる情報を Claude API / Bedrock に送ってよいか？**
 → 禁止。自由記述テキストのみ送信し、氏名・電話番号等は AI 前処理でマスキングする（設計書 §8.3）。
-
-**Q. スタッフ個人の集計クエリを書いてよいか？**
-→ Phase 1 では禁止（設計書 §8.2）。
 
 **Q. テストで実際の Claude API / Bedrock を叩いてよいか？**
 → 禁止。`BaseInterpretationClient` のモックを使用すること。
 
 **Q. 既存コードで使われている `import` をそのまま新しいファイルで使ってよいか？**
-→ 禁止。必ず `AGENTS.md` のセキュリティチェック手順を実施してから使用すること。
-既存コードで使われているからといって安全とは限らない。
-差分確認だけで安全と判断してはならない。パッケージ本体・SDK ラッパーの実装まで確認すること。
-
-**Q. 新しいパッケージを追加してよいか？**
-→ `pyproject.toml` に記載がない場合は、PyPI 公式ページとソースコードを確認してから追加する。
-追加後は必ず `pip-audit` を実行し、evidence ファイルを保存すること。
+→ 禁止。`AGENTS.md` のセキュリティチェック手順を必ず実施。パッケージ本体・SDK ラッパーの実装まで確認すること。
 
 **Q. 外部 API への通信を実装してよいか？**
-→ `AGENTS.md` の allowlist に登録されているドメインのみ許可。未登録の場合は allowlist を更新してからコードに反映すること。
+→ `AGENTS.md` の allowlist に登録されているドメインのみ許可。未登録の場合は allowlist を更新してからコードに反映。
 
 **Q. タスクが完了したとはいつ言えるか？**
-→ pytest が全件 PASS、かつ `tests/python/evidence/` に結果ファイルが保存されていること。evidence なしのタスク完了は認めない。
+→ pytest が全件 PASS、かつ `tests/python/evidence/` に結果ファイルが保存されていること。
