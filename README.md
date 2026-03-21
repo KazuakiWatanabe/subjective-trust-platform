@@ -16,6 +16,37 @@
 
 ---
 
+## 現在のステータス: Phase 1 実装完了
+
+Phase 1（Python 単独 PoC）の全 16 タスクの実装が完了し、145 件のユニットテストが PASS している。
+
+### 実装済みコンポーネント
+
+| カテゴリ | 内容 |
+|---|---|
+| **インフラ・基盤** | Docker 環境（api/db/worker）、pyproject.toml、pydantic Settings、SQLAlchemy 全 10 テーブル、Alembic マイグレーション |
+| **AI 解釈パイプライン** | 抽象クライアント（Mock/Anthropic/Bedrock 切替）、プロンプトテンプレート（PROMPT_VERSION 管理）、日次バッチ（PII マスキング、スロットリング） |
+| **スコア算出** | 5 次元重みテーブル + recency_decay 4 段階、dimension_score 算出、TrustScoreSnapshot 生成、コールドスタート対応 |
+| **REST API** | `POST /visits`（接客タグ入力）、`POST /feedback`（アンケート受信）、`GET /stores/{id}/scores`（スコア参照）、`GET /stores`（店舗一覧） |
+| **バッチ・運用** | POS 日次連携（冪等性保証）、ルールベース TrustEvent 自動生成、週次レポート自動生成、4 種アラート閾値判定 |
+
+### クイックスタート
+
+```bash
+# Docker で起動
+docker compose up --build -d
+
+# デモデータ投入
+docker compose exec api python scripts/seed_demo.py
+
+# Swagger UI をブラウザで開く
+# http://localhost:8080/docs
+```
+
+詳細なデモ手順は [docs/demo-guide.md](./docs/demo-guide.md) を参照。
+
+---
+
 ## 中核概念
 
 **「信頼は主観の業務表現である」**
@@ -66,11 +97,11 @@
 
 ```mermaid
 flowchart LR
-    A["🔍 1. 観測層<br/>接点データの収集"] --> B["🧠 2. 解釈層<br/>主観シグナルの推定"]
-    B --> C["📊 3. 信頼状態層<br/>信頼スコアの算出"]
-    C --> D["🤖 4. 判断層<br/>介入方針の立案"]
-    D --> E["⚡ 5. 介入層<br/>施策の実行"]
-    E --> F["🔄 6. 学習層<br/>結果観測・モデル更新"]
+    A["1. 観測層<br/>接点データの収集"] --> B["2. 解釈層<br/>主観シグナルの推定"]
+    B --> C["3. 信頼状態層<br/>信頼スコアの算出"]
+    C --> D["4. 判断層<br/>介入方針の立案"]
+    D --> E["5. 介入層<br/>施策の実行"]
+    E --> F["6. 学習層<br/>結果観測・モデル更新"]
     F -.->|フィードバック| C
     F -.->|方針更新| D
 
@@ -88,11 +119,37 @@ Phase 1では観測層・解釈層・信頼状態層を構築し、Phase 3以降
 
 ## 段階的導入
 
-| Phase | 期間 | 内容 |
-|---|---|---|
-| **Phase 1** | 3ヶ月 | 直営5店舗。POS連携、接客タグ入力（10秒以内）、ミニアンケート、AI解釈、店舗ダッシュボード、週次レポート |
-| **Phase 2** | +3ヶ月 | 全直営店に拡大。外部レビュー連携、本部分析画面、アラート、店舗間比較、SubjectiveProfile試験構築 |
-| **Phase 3** | +6ヶ月〜 | Trust API、Agent構成（判断層）、介入の半自動化、フィードバックループ、施策の因果仮説管理 |
+| Phase | 期間 | 内容 | 状態 |
+|---|---|---|---|
+| **Phase 1** | 3ヶ月 | 直営5店舗。POS連携、接客タグ入力（10秒以内）、ミニアンケート、AI解釈、店舗ダッシュボード、週次レポート | **実装完了** |
+| **Phase 2** | +3ヶ月 | 全直営店に拡大。外部レビュー連携、本部分析画面、アラート、店舗間比較、SubjectiveProfile試験構築 | 未着手 |
+| **Phase 3** | +6ヶ月〜 | Trust API、Agent構成（判断層）、介入の半自動化、フィードバックループ、施策の因果仮説管理 | 未着手 |
+
+---
+
+## 技術スタック
+
+### Phase 1（実装済み）
+
+| 用途 | 技術 |
+|---|---|
+| Web フレームワーク | FastAPI |
+| ORM / DB | SQLAlchemy 2.x + asyncpg / PostgreSQL 15 |
+| バリデーション | pydantic v2 |
+| AI 解釈 | anthropic SDK / boto3（Bedrock）/ Mock クライアント |
+| データ集計 | polars |
+| テスト | pytest + pytest-asyncio（145 テスト） |
+| 型チェック | mypy（strict モード） |
+| フォーマッタ | ruff |
+| コンテナ | Docker Compose（api + db + worker） |
+
+### Phase 2 以降（予定）
+
+| 用途 | 技術 |
+|---|---|
+| 業務本体 | ASP.NET Core Minimal API（.NET 8 / C#） |
+| キュー連携 | SQS / Cloud Pub/Sub |
+| フロントエンド | Next.js（店舗ダッシュボード） |
 
 ---
 
@@ -101,14 +158,20 @@ Phase 1では観測層・解釈層・信頼状態層を構築し、Phase 3以降
 ```
 subjective-trust-platform/
 ├── README.md                             ← 本ファイル
-├── LICENSE
+├── CLAUDE.md                             ← Claude Code 向け実装ガイド
+├── AGENTS.md                             ← Agent 向け作業ガイド（最上位ルール）
+├── task/
+│   └── task-phase1.md                    ← Phase 1 実装タスクリスト
 ├── docs/
 │   ├── whitepaper-brand-trust.md         ← ホワイトペーパー：信頼の理論的根拠
 │   ├── trust-observation-system-v1.md    ← 設計書v1：Phase 1の実装設計
 │   ├── architecture-overview.md          ← アーキテクチャ設計書：Phase 3以降の全体構造
-│   └── summary-and-mermaid.md            ← 補足資料：1ページ要約 + Mermaid図集
-└── related/
-    └── subjective-architecture-and-store-trust.md  ← 主観アーキテクチャとの接続メモ
+│   ├── demo-guide.md                     ← デモ手順書
+│   └── language_selection_report.md      ← 言語・技術選定の判断根拠
+├── src/python/                           ← Phase 1 実装（Python）
+├── tests/python/                         ← テスト・evidence
+└── scripts/
+    └── seed_demo.py                      ← デモデータ投入スクリプト
 ```
 
 | ドキュメント | 読者 | 目的 |
@@ -116,7 +179,7 @@ subjective-trust-platform/
 | ホワイトペーパー | 全般（公開） | ブランドにおける信頼の位置づけを学術的根拠に基づいて論証する |
 | 設計書v1 | 開発チーム・PdM | Phase 1（5店舗PoC）のデータモデル、入力設計、AI解釈、画面設計、KPIを定義する |
 | アーキテクチャ設計書 | 開発チーム・アーキテクト | Phase 3以降のAgent構成、Trust API、フィードバックループを定義する |
-| 補足資料 | プレゼン・説明用 | 1ページ要約と用途別Mermaid図を提供する |
+| デモ手順書 | 開発チーム・関係者 | ローカルでのデモ環境構築・操作手順 |
 
 ---
 
@@ -148,20 +211,6 @@ subjective-trust-platform/
 | Trait / State / Meta の概念定義 | Trait / State / Meta を接客タグ・アンケート・AI解釈で観測する設計 |
 | Interpretation Layer の位置づけ | AI解釈パイプラインとして実装（Claude API Sonnet） |
 | Feedback Flywheel | 信頼スコア→改善施策→再観測の改善ループ |
-
----
-
-## 技術スタック（Phase 1想定）
-
-| 要素 | 技術 |
-|---|---|
-| データ蓄積 | Cloud SQL（PostgreSQL） |
-| AI解釈 | Claude API（Sonnet）、日次バッチ |
-| スコア算出 | Cloud Functions / Cloud Run Job |
-| 店舗ダッシュボード | Next.js |
-| 本部分析 | Looker Studio |
-| 接客タグ入力 | モバイルWeb（PWA） |
-| アンケート配信 | LINE連携 |
 
 ---
 
