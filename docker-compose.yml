@@ -23,6 +23,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./tests:/app/tests
+      - ./scripts:/app/scripts
     environment:
       - DATABASE_URL=postgresql+asyncpg://trust_user:trust_pass@db:5432/trust_platform
       - AI_BACKEND=${AI_BACKEND:-mock}
@@ -31,10 +32,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn src.python.api.main:app
-             --host 0.0.0.0 --port 8080 --reload"
+    command: sh -c "alembic upgrade head && uvicorn src.python.api.main:app --host 0.0.0.0 --port 8080 --reload"
 
   worker:
     build: .
