@@ -12,7 +12,8 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from src.python.domain.models.base import Base
+# 全モデルをインポートして Alembic autogenerate がテーブルを検出できるようにする
+from src.python.domain.models import Base  # noqa: F401 — side-effect import
 
 config = context.config
 

@@ -9,6 +9,7 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir -e ".[dev]"
 
 COPY tests/ ./tests/
+COPY scripts/ ./scripts/
 COPY alembic.ini .
 
 # src.python.xxx 形式の import を解決するために /app をパスに含める
