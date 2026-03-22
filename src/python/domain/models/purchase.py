@@ -11,7 +11,7 @@ import datetime
 import decimal
 import uuid
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.python.domain.models.base import Base
@@ -41,3 +41,10 @@ class Purchase(Base):
         String(50), nullable=True
     )
     return_date: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    pos_transaction_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("pos_transaction_id", name="uq_purchase_pos_transaction_id"),
+    )
