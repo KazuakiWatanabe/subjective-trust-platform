@@ -1,227 +1,232 @@
-"""週次チェック。
+"""週次チェック（毎週月曜 08:00）。
 
-信頼スコアの異常変動、データ充足度、アラート閾値の傾向を確認する。
+- check_confidence_distribution: needs_review 率が前4週平均の1.5倍超で警告
+- check_is_reliable_progress: is_reliable の逆転（true→false）を検知
+- check_tag_input_rate: 接客タグ入力件数を店舗別に集計
+- check_review_queue_backlog: 未レビュー件数50件超・7日超過で警告
 
 Note:
-    毎週月曜に実行し、週次レポートと合わせて確認する。
+    結果は PdM チャンネル（SLACK_CHANNEL_PDM）に通知する。
 """
 
 import logging
-from datetime import date, timedelta
-from decimal import Decimal
 
-from sqlalchemy import text
-from sqlalchemy.engine import Engine
-
-from src.python.monitoring.common import CheckResult, CheckStatus
+from src.python.monitoring.common import (
+    SLACK_CHANNEL_PDM,
+    CheckResult,
+    CheckStatus,
+    get_db,
+    slack_alert,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def check_score_anomaly(
-    engine: Engine,
-    anomaly_threshold: float = 10.0,
-) -> CheckResult:
-    """信頼スコアの週次異常変動を検知する。
-
-    Args:
-        engine: SQLAlchemy エンジン
-        anomaly_threshold: 1 週間で許容するスコア変動幅（デフォルト 10pt）
+def check_confidence_distribution() -> CheckResult:
+    """needs_review 率が前4週平均の1.5倍超で警告する。
 
     Returns:
         CheckResult
     """
     try:
-        with engine.connect() as conn:
-            # 直近 2 週のスナップショットを取得
-            result = conn.execute(
-                text(
-                    "SELECT target_id, snapshot_date, overall_score "
-                    "FROM trust_score_snapshot "
-                    "WHERE target_type = 'store' "
-                    "ORDER BY target_id, snapshot_date DESC"
-                )
+        with get_db() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT
+                        COUNT(*) FILTER (WHERE needs_review = true)::float
+                        / NULLIF(COUNT(*), 0) AS review_ratio
+                    FROM trust_event
+                    WHERE detected_at >= CURRENT_DATE - INTERVAL '7 days'
+                    """
             )
-            rows = result.fetchall()
+            row = cur.fetchone()
+            this_week = float(row["review_ratio"]) if row and row["review_ratio"] else 0.0
 
-        # 店舗ごとに直近 2 週を比較
-        store_scores: dict[str, list[tuple[date, float]]] = {}
-        for row in rows:
-            store_id = str(row[0])
-            if store_id not in store_scores:
-                store_scores[store_id] = []
-            if len(store_scores[store_id]) < 2:
-                score = float(row[2]) if row[2] is not None else 50.0
-                store_scores[store_id].append((row[1], score))
+            cur.execute(
+                """
+                    SELECT AVG(weekly_ratio) AS avg_ratio FROM (
+                        SELECT
+                            DATE_TRUNC('week', detected_at) AS wk,
+                            COUNT(*) FILTER (WHERE needs_review = true)::float
+                            / NULLIF(COUNT(*), 0) AS weekly_ratio
+                        FROM trust_event
+                        WHERE detected_at BETWEEN CURRENT_DATE - INTERVAL '5 weeks'
+                                              AND CURRENT_DATE - INTERVAL '7 days'
+                        GROUP BY wk
+                    ) sub
+                    """
+            )
+            row2 = cur.fetchone()
+            avg = float(row2["avg_ratio"]) if row2 and row2["avg_ratio"] else 0.0
 
-        anomalies: list[str] = []
-        for store_id, scores in store_scores.items():
-            if len(scores) >= 2:
-                diff = abs(scores[0][1] - scores[1][1])
-                if diff > anomaly_threshold:
-                    anomalies.append(
-                        f"store={store_id[:8]}...: {scores[1][1]:.1f}→{scores[0][1]:.1f} (差 {diff:.1f}pt)"
+        msg = (
+            f"*【週次】confidence分布チェック*\n"
+            f"今週の要レビュー率: {this_week * 100:.1f}% / 前4週平均: {avg * 100:.1f}%"
+        )
+        if avg > 0 and this_week > avg * 1.5:
+            msg += "\n要レビュー率が急増しています。プロンプトの見直しを検討してください"
+            slack_alert(msg, level="warning", channel=SLACK_CHANNEL_PDM)
+            return CheckResult(name="confidence_distribution", status=CheckStatus.WARN, message=msg)
+
+        slack_alert(msg, level="info", channel=SLACK_CHANNEL_PDM)
+        return CheckResult(name="confidence_distribution", status=CheckStatus.OK, message=msg)
+    except Exception as e:
+        return CheckResult(
+            name="confidence_distribution",
+            status=CheckStatus.ERROR,
+            message=f"confidence チェックエラー: {e}",
+        )
+
+
+def check_is_reliable_progress() -> CheckResult:
+    """is_reliable の逆転（true→false）を検知する。
+
+    Returns:
+        CheckResult
+    """
+    try:
+        with get_db() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    s.store_name,
+                    t_now.is_reliable AS reliable_now,
+                    t_prev.is_reliable AS reliable_prev
+                FROM store s
+                JOIN trust_score_snapshot t_now
+                    ON t_now.target_id = s.store_id
+                    AND t_now.target_type = 'store'
+                    AND t_now.snapshot_date = (
+                        SELECT MAX(snapshot_date)
+                        FROM trust_score_snapshot
                     )
+                LEFT JOIN trust_score_snapshot t_prev
+                    ON t_prev.target_id = s.store_id
+                    AND t_prev.target_type = 'store'
+                    AND t_prev.snapshot_date = (
+                        SELECT MAX(snapshot_date)
+                        FROM trust_score_snapshot
+                    ) - INTERVAL '7 days'
+                WHERE s.status = 'active'
+                """
+            )
+            rows = cur.fetchall()
 
-        if anomalies:
+        reliable_count = sum(1 for r in rows if r["reliable_now"])
+        regressions = [r for r in rows if r["reliable_prev"] and not r["reliable_now"]]
+
+        msg = f"*【週次】is_reliable進捗*\n信頼区間確立済み店舗: {reliable_count} / {len(rows)}店舗"
+        slack_alert(msg, level="info", channel=SLACK_CHANNEL_PDM)
+
+        if regressions:
+            names = ", ".join(str(r["store_name"]) for r in regressions)
+            warn_msg = (
+                f"*is_reliable 逆転（true→false）* {names}\nデータ収集が滞っている可能性があります"
+            )
+            slack_alert(warn_msg, level="warning")
             return CheckResult(
-                name="score_anomaly",
-                status=CheckStatus.WARN,
-                message=f"スコア異常変動 {len(anomalies)} 件: {'; '.join(anomalies)}",
-                details={"anomalies": anomalies},
+                name="is_reliable_progress", status=CheckStatus.WARN, message=warn_msg
             )
 
-        return CheckResult(
-            name="score_anomaly",
-            status=CheckStatus.OK,
-            message="スコア変動正常（異常変動なし）",
-        )
+        return CheckResult(name="is_reliable_progress", status=CheckStatus.OK, message=msg)
     except Exception as e:
         return CheckResult(
-            name="score_anomaly",
+            name="is_reliable_progress",
             status=CheckStatus.ERROR,
-            message=f"スコア異常チェックエラー: {e}",
+            message=f"is_reliable チェックエラー: {e}",
         )
 
 
-def check_data_sufficiency(
-    engine: Engine,
-    min_events_per_store: int = 10,
-) -> CheckResult:
-    """店舗ごとのデータ充足度を確認する。
-
-    Args:
-        engine: SQLAlchemy エンジン
-        min_events_per_store: 1 週間に期待する最小イベント数
-
-    Returns:
-        CheckResult
-    """
-    week_ago = date.today() - timedelta(weeks=1)
-
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text(
-                    "SELECT s.store_id, s.store_name, "
-                    "  COALESCE(event_counts.cnt, 0) AS event_count "
-                    "FROM store s "
-                    "LEFT JOIN ("
-                    "  SELECT store_id, COUNT(*) AS cnt "
-                    "  FROM trust_event "
-                    "  WHERE detected_at::date >= :week_ago "
-                    "  GROUP BY store_id"
-                    ") event_counts ON s.store_id = event_counts.store_id "
-                    "WHERE s.status = 'active'"
-                ),
-                {"week_ago": week_ago},
-            )
-            rows = result.fetchall()
-
-        insufficient: list[str] = []
-        for row in rows:
-            if row[2] < min_events_per_store:
-                insufficient.append(f"{row[1]}({row[2]}件)")
-
-        if insufficient:
-            return CheckResult(
-                name="data_sufficiency",
-                status=CheckStatus.WARN,
-                message=(
-                    f"データ不足店舗 {len(insufficient)} 件: "
-                    f"{', '.join(insufficient)}（閾値: 週{min_events_per_store}件）"
-                ),
-                details={"insufficient_stores": insufficient},
-            )
-
-        return CheckResult(
-            name="data_sufficiency",
-            status=CheckStatus.OK,
-            message=f"全店舗データ充足（閾値: 週{min_events_per_store}件）",
-        )
-    except Exception as e:
-        return CheckResult(
-            name="data_sufficiency",
-            status=CheckStatus.ERROR,
-            message=f"データ充足度チェックエラー: {e}",
-        )
-
-
-def check_unreliable_stores(engine: Engine) -> CheckResult:
-    """is_reliable=False の店舗数を確認する。
-
-    Args:
-        engine: SQLAlchemy エンジン
+def check_tag_input_rate() -> CheckResult:
+    """接客タグ入力件数を店舗別に集計する。
 
     Returns:
         CheckResult
     """
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM trust_score_snapshot "
-                    "WHERE target_type = 'store' "
-                    "AND is_reliable = false "
-                    "AND snapshot_date = ("
-                    "  SELECT MAX(snapshot_date) FROM trust_score_snapshot"
-                    ")"
-                )
+        with get_db() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT s.store_name, COUNT(v.visit_id) AS visit_count
+                    FROM store s
+                    LEFT JOIN visit v
+                        ON v.store_id = s.store_id
+                        AND v.visit_datetime >= CURRENT_DATE - INTERVAL '7 days'
+                    WHERE s.status = 'active'
+                    GROUP BY s.store_id, s.store_name
+                    """
             )
-            unreliable_count = result.scalar() or 0
+            rows = cur.fetchall()
 
-            result = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM trust_score_snapshot "
-                    "WHERE target_type = 'store' "
-                    "AND snapshot_date = ("
-                    "  SELECT MAX(snapshot_date) FROM trust_score_snapshot"
-                    ")"
-                )
-            )
-            total_count = result.scalar() or 0
+        low_stores = [r for r in rows if r["visit_count"] < 10]
+        lines = [f"  {r['store_name']}: {r['visit_count']}件" for r in rows]
+        msg = "*【週次】接客タグ入力状況*\n" + "\n".join(lines)
+        if low_stores:
+            msg += f"\n入力件数が少ない店舗: {', '.join(str(r['store_name']) for r in low_stores)}"
 
-        if total_count == 0:
-            return CheckResult(
-                name="unreliable_stores",
-                status=CheckStatus.WARN,
-                message="スコアスナップショットが存在しない",
-            )
+        slack_alert(msg, level="info", channel=SLACK_CHANNEL_PDM)
 
-        if unreliable_count > 0:
-            return CheckResult(
-                name="unreliable_stores",
-                status=CheckStatus.WARN,
-                message=f"unreliable 店舗: {unreliable_count}/{total_count} 件",
-                details={"unreliable": unreliable_count, "total": total_count},
-            )
-
-        return CheckResult(
-            name="unreliable_stores",
-            status=CheckStatus.OK,
-            message=f"全 {total_count} 店舗が reliable",
-        )
+        if low_stores:
+            return CheckResult(name="tag_input_rate", status=CheckStatus.WARN, message=msg)
+        return CheckResult(name="tag_input_rate", status=CheckStatus.OK, message=msg)
     except Exception as e:
         return CheckResult(
-            name="unreliable_stores",
+            name="tag_input_rate",
             status=CheckStatus.ERROR,
-            message=f"unreliable チェックエラー: {e}",
+            message=f"タグ入力率チェックエラー: {e}",
         )
 
 
-def run_weekly_checks(engine: Engine) -> list[CheckResult]:
+def check_review_queue_backlog() -> CheckResult:
+    """未レビュー件数50件超・7日超過で警告する。
+
+    Returns:
+        CheckResult
+    """
+    try:
+        with get_db() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT
+                        COUNT(*) AS total_pending,
+                        COUNT(*) FILTER (
+                            WHERE detected_at < NOW() - INTERVAL '7 days'
+                        ) AS overdue_7d
+                    FROM trust_event
+                    WHERE needs_review = true AND reviewed_flag = false
+                    """
+            )
+            row = cur.fetchone()
+
+        total = row["total_pending"] if row else 0
+        overdue = row["overdue_7d"] if row else 0
+
+        msg = f"*【週次】レビューキュー状況*\n未レビュー件数: {total}件（うち7日超過: {overdue}件）"
+        if total > 50 or overdue > 0:
+            slack_alert(msg, level="warning", channel=SLACK_CHANNEL_PDM)
+            return CheckResult(name="review_queue_backlog", status=CheckStatus.WARN, message=msg)
+
+        slack_alert(msg, level="info", channel=SLACK_CHANNEL_PDM)
+        return CheckResult(name="review_queue_backlog", status=CheckStatus.OK, message=msg)
+    except Exception as e:
+        return CheckResult(
+            name="review_queue_backlog",
+            status=CheckStatus.ERROR,
+            message=f"レビューキューチェックエラー: {e}",
+        )
+
+
+def run_weekly_checks() -> list[CheckResult]:
     """全週次チェックを実行する。
-
-    Args:
-        engine: SQLAlchemy エンジン
 
     Returns:
         CheckResult のリスト
     """
     results = [
-        check_score_anomaly(engine),
-        check_data_sufficiency(engine),
-        check_unreliable_stores(engine),
+        check_confidence_distribution(),
+        check_is_reliable_progress(),
+        check_tag_input_rate(),
+        check_review_queue_backlog(),
     ]
 
     for r in results:

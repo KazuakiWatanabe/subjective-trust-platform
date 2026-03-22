@@ -268,12 +268,32 @@ async def run_pipeline(target_date: str | None = None) -> None:
     client = get_interpretation_client(settings)
     pipeline = InterpretationPipeline(client=client)
 
+    # バッチジョブ記録（監視用）
+    log_id: str | None = None
+    try:
+        from src.python.monitoring.common import get_db, record_job_end, record_job_start
+        with get_db() as conn:
+            log_id = record_job_start(conn, "ai_interpretation_batch")
+    except Exception as e:
+        logger.warning("ジョブ記録の開始に失敗（監視テーブル未作成の可能性）: %s", e)
+
     # DB からの取得は統合テストで確認。ここではスタブ
     feedbacks: list[dict[str, Any]] = []
     reviews: list[dict[str, Any]] = []
 
     events = await pipeline.run_batch(feedbacks, reviews)
     logger.info("AI 解釈パイプライン完了: %d 件の TrustEvent を生成", len(events))
+
+    # バッチジョブ記録の終了 + クリティカルチェック
+    try:
+        from src.python.monitoring.common import get_db, record_job_end
+        from src.python.monitoring.checks.critical import run_critical_checks
+        if log_id:
+            with get_db() as conn:
+                record_job_end(conn, log_id, len(events))
+            run_critical_checks("ai_interpretation_batch")
+    except Exception as e:
+        logger.warning("ジョブ記録の終了に失敗: %s", e)
 
 
 async def watch() -> None:

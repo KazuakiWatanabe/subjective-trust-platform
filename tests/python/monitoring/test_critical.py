@@ -1,70 +1,105 @@
 """クリティカルチェックのユニットテスト。
 
 対象: src/python/monitoring/checks/critical.py
-テスト観点: API ヘルスチェック、テーブル存在確認
+テスト観点: バッチ処理時間超過、Snapshot更新漏れ、TrustEvent重複
 
 Note:
-    実際の DB / API 接続は行わない。モックで検証する。
+    DB はモックで検証する。
 """
 
 from unittest.mock import MagicMock, patch
 
 from src.python.monitoring.checks.critical import (
-    EXPECTED_TABLES,
-    check_api_health,
-    check_tables_exist,
+    check_batch_duration,
+    check_duplicate_trust_events,
+    check_snapshot_completeness,
 )
 from src.python.monitoring.common import CheckStatus
 
 
-class TestCheckApiHealth:
-    """API ヘルスチェック。"""
+def _mock_db_context(cursor_results: list[dict[str, object] | None]) -> MagicMock:
+    """get_db() のモックを生成する。"""
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.side_effect = cursor_results
+    mock_cursor.fetchall.side_effect = cursor_results
+    mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    return mock_conn
 
-    @patch("src.python.monitoring.checks.critical.requests.get")
-    def test_正常応答でOK(self, mock_get: MagicMock) -> None:
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = {
-            "status": "ok", "environment": "local", "ai_backend": "mock"
-        }
-        result = check_api_health("http://test:8080")
+
+class TestCheckBatchDuration:
+    """バッチ処理時間超過。"""
+
+    @patch("src.python.monitoring.checks.critical.slack_alert")
+    @patch("src.python.monitoring.checks.critical.get_db")
+    def test_正常時間でOK(self, mock_get_db: MagicMock, mock_slack: MagicMock) -> None:
+        conn = _mock_db_context([
+            {"duration_min": 5.0, "processed_count": 100},  # latest
+            {"median_min": 4.0},  # stats
+        ])
+        mock_get_db.return_value.__enter__ = MagicMock(return_value=conn)
+        mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+        result = check_batch_duration("test_batch")
+        assert result.status == CheckStatus.OK
+        mock_slack.assert_not_called()
+
+    @patch("src.python.monitoring.checks.critical.slack_alert")
+    @patch("src.python.monitoring.checks.critical.get_db")
+    def test_超過でCRITICAL(self, mock_get_db: MagicMock, mock_slack: MagicMock) -> None:
+        conn = _mock_db_context([
+            {"duration_min": 45.0, "processed_count": 100},  # latest
+            {"median_min": 10.0},  # stats → threshold=30
+        ])
+        mock_get_db.return_value.__enter__ = MagicMock(return_value=conn)
+        mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+        result = check_batch_duration("test_batch")
+        assert result.status == CheckStatus.CRITICAL
+        mock_slack.assert_called_once()
+
+
+class TestCheckSnapshotCompleteness:
+    """Snapshot 更新漏れ。"""
+
+    @patch("src.python.monitoring.checks.critical.slack_alert")
+    @patch("src.python.monitoring.checks.critical.get_db")
+    def test_全店舗更新済みでOK(self, mock_get_db: MagicMock, mock_slack: MagicMock) -> None:
+        conn = _mock_db_context([[]])  # missing = empty
+        mock_get_db.return_value.__enter__ = MagicMock(return_value=conn)
+        mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+        result = check_snapshot_completeness()
         assert result.status == CheckStatus.OK
 
-    @patch("src.python.monitoring.checks.critical.requests.get")
-    def test_500でCRITICAL(self, mock_get: MagicMock) -> None:
-        mock_get.return_value.status_code = 500
-        result = check_api_health("http://test:8080")
+    @patch("src.python.monitoring.checks.critical.slack_alert")
+    @patch("src.python.monitoring.checks.critical.get_db")
+    def test_欠損ありでCRITICAL(self, mock_get_db: MagicMock, mock_slack: MagicMock) -> None:
+        conn = _mock_db_context([[{"store_id": "xxx", "store_name": "渋谷店"}]])
+        mock_get_db.return_value.__enter__ = MagicMock(return_value=conn)
+        mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+        result = check_snapshot_completeness()
         assert result.status == CheckStatus.CRITICAL
-
-    @patch("src.python.monitoring.checks.critical.requests.get")
-    def test_接続不可でCRITICAL(self, mock_get: MagicMock) -> None:
-        import requests
-        mock_get.side_effect = requests.ConnectionError()
-        result = check_api_health("http://test:8080")
-        assert result.status == CheckStatus.CRITICAL
+        mock_slack.assert_called_once()
 
 
-class TestCheckTablesExist:
-    """テーブル存在確認。"""
+class TestCheckDuplicateTrustEvents:
+    """TrustEvent 重複検知。"""
 
-    def test_全テーブル存在でOK(self) -> None:
-        mock_engine = MagicMock()
-        mock_conn = MagicMock()
-        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
-        # 全テーブル + alembic_version を返す
-        mock_conn.execute.return_value = [
-            (t,) for t in EXPECTED_TABLES + ["alembic_version", "batch_job_logs"]
-        ]
-        result = check_tables_exist(mock_engine)
+    @patch("src.python.monitoring.checks.critical.slack_alert")
+    @patch("src.python.monitoring.checks.critical.get_db")
+    def test_重複なしでOK(self, mock_get_db: MagicMock, mock_slack: MagicMock) -> None:
+        conn = _mock_db_context([[]])  # duplicates = empty
+        mock_get_db.return_value.__enter__ = MagicMock(return_value=conn)
+        mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+        result = check_duplicate_trust_events()
         assert result.status == CheckStatus.OK
 
-    def test_テーブル欠損でCRITICAL(self) -> None:
-        mock_engine = MagicMock()
-        mock_conn = MagicMock()
-        mock_engine.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
-        mock_engine.connect.return_value.__exit__ = MagicMock(return_value=False)
-        # store テーブルだけ返す
-        mock_conn.execute.return_value = [("store",), ("alembic_version",)]
-        result = check_tables_exist(mock_engine)
+    @patch("src.python.monitoring.checks.critical.slack_alert")
+    @patch("src.python.monitoring.checks.critical.get_db")
+    def test_重複ありでCRITICAL(self, mock_get_db: MagicMock, mock_slack: MagicMock) -> None:
+        conn = _mock_db_context([[
+            {"source_type": "feedback", "source_id": "xxx", "trust_dimension": "service", "cnt": 2}
+        ]])
+        mock_get_db.return_value.__enter__ = MagicMock(return_value=conn)
+        mock_get_db.return_value.__exit__ = MagicMock(return_value=False)
+        result = check_duplicate_trust_events()
         assert result.status == CheckStatus.CRITICAL
-        assert "テーブル欠損" in result.message
