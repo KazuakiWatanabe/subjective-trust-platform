@@ -16,9 +16,22 @@
 
 ---
 
-## 現在のステータス: Phase 1 実装完了
+## 現在のステータス
 
-Phase 1（Python 単独 PoC）の全 16 タスクの実装が完了し、145 件のユニットテストが PASS している。
+### Phase 1: 実装完了
+
+Phase 1（Python 単独 PoC）の全 16 タスクの実装が完了。
+
+### 周辺開発: 実装完了
+
+Phase 1 完了後の周辺開発として、運用監視と Google 口コミ連携を実装。
+
+| コンポーネント | テスト数 | 状態 |
+|---|---|---|
+| Phase 1 コア（T-00〜T-15） | 145 | 完了・マージ済み |
+| 運用監視（タスク A） | 21 | 完了・マージ済み |
+| Google 口コミ連携（タスク D） | 24 | 完了・PR 待ち |
+| **合計** | **185+** | |
 
 ### 実装済みコンポーネント
 
@@ -29,6 +42,8 @@ Phase 1（Python 単独 PoC）の全 16 タスクの実装が完了し、145 件
 | **スコア算出** | 5 次元重みテーブル + recency_decay 4 段階、dimension_score 算出、TrustScoreSnapshot 生成、コールドスタート対応 |
 | **REST API** | `POST /visits`（接客タグ入力）、`POST /feedback`（アンケート受信）、`GET /stores/{id}/scores`（スコア参照）、`GET /stores`（店舗一覧） |
 | **バッチ・運用** | POS 日次連携（冪等性保証）、ルールベース TrustEvent 自動生成、週次レポート自動生成、4 種アラート閾値判定 |
+| **運用監視** | 即時アラート 3 件（バッチ処理時間超過・Snapshot 更新漏れ・TrustEvent 重複）、日次チェック 3 件（処理件数減少・API コスト急増・ソース別ゼロ検知）、週次チェック 4 件（confidence 分布・is_reliable 進捗・タグ入力率・レビューキュー）|
+| **Google 口コミ連携** | review_fetcher（取得・PII マスキング・重複チェック）、review_interpreter（AI 解釈・TrustEvent 生成）、外部レビュー専用プロンプト（mentions 配列対応）|
 
 ### クイックスタート
 
@@ -122,14 +137,15 @@ Phase 1では観測層・解釈層・信頼状態層を構築し、Phase 3以降
 | Phase | 期間 | 内容 | 状態 |
 |---|---|---|---|
 | **Phase 1** | 3ヶ月 | 直営5店舗。POS連携、接客タグ入力（10秒以内）、ミニアンケート、AI解釈、店舗ダッシュボード、週次レポート | **実装完了** |
-| **Phase 2** | +3ヶ月 | 全直営店に拡大。外部レビュー連携、本部分析画面、アラート、店舗間比較、SubjectiveProfile試験構築 | 未着手 |
+| **周辺開発** | — | 運用監視（即時/日次/週次チェック）、Google口コミ連携（取得・AI解釈・TrustEvent生成） | **実装完了** |
+| **Phase 2** | +3ヶ月 | 全直営店に拡大。本部分析画面、アラート、店舗間比較、SubjectiveProfile試験構築 | 設計完了・未着手 |
 | **Phase 3** | +6ヶ月〜 | Trust API、Agent構成（判断層）、介入の半自動化、フィードバックループ、施策の因果仮説管理 | 未着手 |
 
 ---
 
 ## 技術スタック
 
-### Phase 1（実装済み）
+### Phase 1 + 周辺開発（実装済み）
 
 | 用途 | 技術 |
 |---|---|
@@ -137,11 +153,14 @@ Phase 1では観測層・解釈層・信頼状態層を構築し、Phase 3以降
 | ORM / DB | SQLAlchemy 2.x + asyncpg / PostgreSQL 15 |
 | バリデーション | pydantic v2 |
 | AI 解釈 | anthropic SDK / boto3（Bedrock）/ Mock クライアント |
+| 外部レビュー連携 | Google Business Profile API（google-auth / google-api-python-client） |
 | データ集計 | polars |
-| テスト | pytest + pytest-asyncio（145 テスト） |
+| テスト | pytest + pytest-asyncio（185+ テスト） |
 | 型チェック | mypy（strict モード） |
 | フォーマッタ | ruff |
 | コンテナ | Docker Compose（api + db + worker） |
+| 監視 | Cloud Functions + Cloud Scheduler（functions-framework） |
+| リトライ | tenacity（指数バックオフ） |
 
 ### Phase 2 以降（予定）
 
@@ -157,21 +176,27 @@ Phase 1では観測層・解釈層・信頼状態層を構築し、Phase 3以降
 
 ```
 subjective-trust-platform/
-├── README.md                             ← 本ファイル
-├── CLAUDE.md                             ← Claude Code 向け実装ガイド
-├── AGENTS.md                             ← Agent 向け作業ガイド（最上位ルール）
+├── README.md                                ← 本ファイル
+├── CLAUDE.md                                ← Claude Code 向け実装ガイド
+├── AGENTS.md                                ← Agent 向け作業ガイド（最上位ルール）
 ├── task/
-│   └── task-phase1.md                    ← Phase 1 実装タスクリスト
+│   ├── task-phase1.md                       ← Phase 1 実装タスクリスト
+│   └── task-peripheral-dev.md               ← 周辺開発タスクリスト（タスクA〜E）
 ├── docs/
-│   ├── whitepaper-brand-trust.md         ← ホワイトペーパー：信頼の理論的根拠
-│   ├── trust-observation-system-v1.md    ← 設計書v1：Phase 1の実装設計
-│   ├── architecture-overview.md          ← アーキテクチャ設計書：Phase 3以降の全体構造
-│   ├── demo-guide.md                     ← デモ手順書
-│   └── language_selection_report.md      ← 言語・技術選定の判断根拠
-├── src/python/                           ← Phase 1 実装（Python）
-├── tests/python/                         ← テスト・evidence
+│   ├── whitepaper-brand-trust.md            ← ホワイトペーパー：信頼の理論的根拠
+│   ├── trust-observation-system-v1.md       ← 設計書v1：Phase 1の実装設計
+│   ├── architecture-overview.md             ← アーキテクチャ設計書：Phase 3以降
+│   ├── demo-guide.md                        ← デモ手順書
+│   ├── monitoring-impl.md                   ← 監視実装ガイド
+│   ├── google-review-integration-v1.md      ← Google口コミ連携設計書
+│   ├── hq-analysis-ux-v1.md                 ← 本部分析画面UX設計仕様書（Phase 2準備）
+│   ├── subjective-profile-design-v1.md      ← SubjectiveProfile設計書（Phase 2準備）
+│   └── language_selection_report.md         ← 言語・技術選定の判断根拠
+├── src/python/                              ← Phase 1 + 周辺開発の実装
+├── tests/python/                            ← テスト・evidence
 └── scripts/
-    └── seed_demo.py                      ← デモデータ投入スクリプト
+    ├── seed_demo.py                         ← デモデータ投入スクリプト
+    └── test_google_api.py                   ← Google API接続確認スクリプト
 ```
 
 | ドキュメント | 読者 | 目的 |
@@ -179,6 +204,10 @@ subjective-trust-platform/
 | ホワイトペーパー | 全般（公開） | ブランドにおける信頼の位置づけを学術的根拠に基づいて論証する |
 | 設計書v1 | 開発チーム・PdM | Phase 1（5店舗PoC）のデータモデル、入力設計、AI解釈、画面設計、KPIを定義する |
 | アーキテクチャ設計書 | 開発チーム・アーキテクト | Phase 3以降のAgent構成、Trust API、フィードバックループを定義する |
+| 監視実装ガイド | 開発チーム | Phase 1の監視設計・実装手順・閾値定義 |
+| Google口コミ連携設計書 | 開発チーム | Google Business Profile API連携の設計・バッチ・プロンプト |
+| 本部分析画面UX設計 | 開発チーム・PdM | Phase 2の本部分析3画面の設計仕様・API定義 |
+| SubjectiveProfile設計書 | 開発チーム | Phase 2のTrait/State/Metaプロファイル設計 |
 | デモ手順書 | 開発チーム・関係者 | ローカルでのデモ環境構築・操作手順 |
 
 ---
