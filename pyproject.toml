@@ -20,6 +20,8 @@ dependencies = [
     "boto3>=1.35.0",
     "polars>=1.16.0",
     "requests>=2.31.0",
+    "functions-framework>=3.5.0",
+    "tenacity>=8.2.0",
 ]
 
 [project.optional-dependencies]

@@ -1,229 +1,209 @@
-"""日次チェック。
+"""日次チェック（毎朝 08:30）。
 
-AI 解釈パイプラインの実行状況、needs_review 率、POS 連携状況を確認する。
+- check_batch_processed_count: バッチ処理件数の減少検知（前7日平均の50%未満）
+- check_claude_api_cost: Claude API コスト急増（前7日平均の150%超）
+- check_trust_event_by_source: source_type 別に 3 日連続ゼロを検知
 
 Note:
-    毎朝実行し、前日のバッチ処理が正常に完了したかを検証する。
+    Cloud Scheduler から main_daily.py 経由で起動する。
 """
 
 import logging
-from datetime import date, timedelta
 
-from sqlalchemy import text
-from sqlalchemy.engine import Engine
-
-from src.python.monitoring.common import CheckResult, CheckStatus
+from src.python.monitoring.common import CheckResult, CheckStatus, get_db, slack_alert
 
 logger = logging.getLogger(__name__)
 
 
-def check_pipeline_execution(
-    engine: Engine,
-    target_date: date | None = None,
+def check_batch_processed_count(
+    job_name: str,
+    drop_ratio: float = 0.5,
 ) -> CheckResult:
-    """AI 解釈パイプラインの実行確認。
+    """バッチ処理件数の減少を検知する。
 
     Args:
-        engine: SQLAlchemy エンジン
-        target_date: 確認対象日（デフォルトは前日）
+        job_name: ジョブ名
+        drop_ratio: 前7日平均に対する警告閾値（デフォルト 50%）
 
     Returns:
         CheckResult
     """
-    if target_date is None:
-        target_date = date.today() - timedelta(days=1)
-
     try:
-        with engine.connect() as conn:
-            # 対象日に生成された AI イベント数を確認
-            result = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM trust_event "
-                    "WHERE generated_by = 'ai' "
-                    "AND detected_at::date = :target_date"
-                ),
-                {"target_date": target_date},
+        with get_db() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT processed_count
+                    FROM batch_job_logs
+                    WHERE job_name = %s AND status = 'completed'
+                    ORDER BY finished_at DESC LIMIT 1
+                    """,
+                (job_name,),
             )
-            ai_event_count = result.scalar() or 0
+            latest = cur.fetchone()
+            if not latest or latest["processed_count"] == 0:
+                msg = (
+                    f"*バッチ処理件数ゼロ* `{job_name}`\n"
+                    f"本日の処理件数が0件です。入力データを確認してください"
+                )
+                slack_alert(msg, level="warning")
+                return CheckResult(
+                    name="batch_processed_count", status=CheckStatus.WARN, message=msg
+                )
 
-            # 対象日の未処理 Feedback（free_comment あり）を確認
-            result = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM feedback f "
-                    "WHERE f.free_comment IS NOT NULL "
-                    "AND f.free_comment != '' "
-                    "AND f.submitted_at::date = :target_date "
-                    "AND NOT EXISTS ("
-                    "  SELECT 1 FROM trust_event te "
-                    "  WHERE te.source_type = 'feedback' "
-                    "  AND te.source_id = f.feedback_id "
-                    "  AND te.generated_by = 'ai'"
-                    ")"
-                ),
-                {"target_date": target_date},
+            cur.execute(
+                """
+                    SELECT AVG(processed_count) AS avg_count
+                    FROM batch_job_logs
+                    WHERE job_name = %s AND status = 'completed'
+                    AND started_at BETWEEN NOW() - INTERVAL '8 days' AND NOW() - INTERVAL '1 day'
+                    """,
+                (job_name,),
             )
-            unprocessed_count = result.scalar() or 0
+            stats = cur.fetchone()
 
-        if unprocessed_count > 0:
-            return CheckResult(
-                name="pipeline_execution",
-                status=CheckStatus.WARN,
-                message=(
-                    f"未処理 Feedback あり: {unprocessed_count} 件"
-                    f"（AI イベント生成: {ai_event_count} 件）"
-                ),
-                details={
-                    "target_date": str(target_date),
-                    "ai_event_count": ai_event_count,
-                    "unprocessed_count": unprocessed_count,
-                },
+        avg = float(stats["avg_count"]) if stats and stats["avg_count"] else 0.0
+        today = latest["processed_count"]
+
+        if avg > 0 and today < avg * drop_ratio:
+            msg = (
+                f"*バッチ処理件数減少* `{job_name}`\n"
+                f"本日: {today}件 / 前7日平均: {avg:.1f}件（{today / avg * 100:.0f}%）\n"
+                f"接客タグ入力率またはアンケート配信を確認してください"
             )
+            slack_alert(msg, level="warning")
+            return CheckResult(name="batch_processed_count", status=CheckStatus.WARN, message=msg)
 
         return CheckResult(
-            name="pipeline_execution",
+            name="batch_processed_count",
             status=CheckStatus.OK,
-            message=f"パイプライン正常: AI イベント {ai_event_count} 件生成",
-            details={"target_date": str(target_date), "ai_event_count": ai_event_count},
+            message=f"処理件数正常: {job_name} ({today}件)",
         )
     except Exception as e:
         return CheckResult(
-            name="pipeline_execution",
+            name="batch_processed_count",
             status=CheckStatus.ERROR,
-            message=f"パイプラインチェックエラー: {e}",
+            message=f"処理件数チェックエラー: {e}",
         )
 
 
-def check_needs_review_rate(
-    engine: Engine,
-    target_date: date | None = None,
-    warn_threshold: float = 0.3,
-) -> CheckResult:
-    """needs_review 率の確認。
-
-    Args:
-        engine: SQLAlchemy エンジン
-        target_date: 確認対象日（デフォルトは前日）
-        warn_threshold: 警告閾値（デフォルト 30%）
+def check_claude_api_cost() -> CheckResult:
+    """Claude API コスト急増を検知する（前7日平均の150%超）。
 
     Returns:
         CheckResult
     """
-    if target_date is None:
-        target_date = date.today() - timedelta(days=1)
-
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text(
-                    "SELECT "
-                    "  COUNT(*) AS total, "
-                    "  SUM(CASE WHEN needs_review THEN 1 ELSE 0 END) AS review_count "
-                    "FROM trust_event "
-                    "WHERE generated_by = 'ai' "
-                    "AND detected_at::date = :target_date"
-                ),
-                {"target_date": target_date},
+        with get_db() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT
+                        api_cost_jpy AS today_cost,
+                        (SELECT AVG(api_cost_jpy)
+                         FROM batch_job_logs
+                         WHERE job_name = 'ai_interpretation_batch'
+                           AND status = 'completed'
+                           AND started_at BETWEEN NOW() - INTERVAL '8 days'
+                                              AND NOW() - INTERVAL '1 day'
+                        ) AS avg_cost
+                    FROM batch_job_logs
+                    WHERE job_name = 'ai_interpretation_batch' AND status = 'completed'
+                    ORDER BY finished_at DESC LIMIT 1
+                    """
             )
-            row = result.fetchone()
-            total = row[0] if row else 0
-            review_count = row[1] if row else 0
+            row = cur.fetchone()
 
-        if total == 0:
+        if not row or not row["avg_cost"] or not row["today_cost"]:
             return CheckResult(
-                name="needs_review_rate",
-                status=CheckStatus.OK,
-                message="AI イベントなし（needs_review 率算出スキップ）",
+                name="claude_api_cost", status=CheckStatus.OK, message="API コストデータなし"
             )
 
-        rate = review_count / total
-        if rate > warn_threshold:
-            return CheckResult(
-                name="needs_review_rate",
-                status=CheckStatus.WARN,
-                message=(
-                    f"needs_review 率が高い: {rate:.0%}（{review_count}/{total} 件）"
-                    f" — 閾値 {warn_threshold:.0%}"
-                ),
-                details={"rate": rate, "total": total, "review_count": review_count},
+        today_cost = float(row["today_cost"])
+        avg_cost = float(row["avg_cost"])
+
+        if today_cost > avg_cost * 1.5:
+            msg = (
+                f"*Claude APIコスト急増*\n"
+                f"本日: ¥{today_cost:.0f} / 前7日平均: ¥{avg_cost:.0f}\n"
+                f"プロンプト改修または処理件数の急増を確認してください"
             )
+            slack_alert(msg, level="warning")
+            return CheckResult(name="claude_api_cost", status=CheckStatus.WARN, message=msg)
 
         return CheckResult(
-            name="needs_review_rate",
+            name="claude_api_cost",
             status=CheckStatus.OK,
-            message=f"needs_review 率正常: {rate:.0%}（{review_count}/{total} 件）",
+            message=f"API コスト正常: ¥{today_cost:.0f}",
         )
     except Exception as e:
         return CheckResult(
-            name="needs_review_rate",
+            name="claude_api_cost",
             status=CheckStatus.ERROR,
-            message=f"needs_review 率チェックエラー: {e}",
+            message=f"API コストチェックエラー: {e}",
         )
 
 
-def check_pos_sync(
-    engine: Engine,
-    target_date: date | None = None,
-) -> CheckResult:
-    """POS 日次連携の実行確認。
-
-    Args:
-        engine: SQLAlchemy エンジン
-        target_date: 確認対象日（デフォルトは前日）
+def check_trust_event_by_source() -> CheckResult:
+    """source_type 別に 3 日連続ゼロを検知する。
 
     Returns:
         CheckResult
     """
-    if target_date is None:
-        target_date = date.today() - timedelta(days=1)
+    source_types = ["visit", "feedback", "complaint", "review"]
 
     try:
-        with engine.connect() as conn:
-            result = conn.execute(
-                text(
-                    "SELECT COUNT(*) FROM purchase "
-                    "WHERE purchased_at::date = :target_date"
-                ),
-                {"target_date": target_date},
+        with get_db() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                    SELECT
+                        source_type,
+                        SUM(CASE WHEN detected_at::date = CURRENT_DATE THEN 1 ELSE 0 END) AS d0,
+                        SUM(CASE WHEN detected_at::date = CURRENT_DATE - 1 THEN 1 ELSE 0 END) AS d1,
+                        SUM(CASE WHEN detected_at::date = CURRENT_DATE - 2 THEN 1 ELSE 0 END) AS d2
+                    FROM trust_event
+                    WHERE detected_at >= CURRENT_DATE - INTERVAL '3 days'
+                    GROUP BY source_type
+                    """
             )
-            purchase_count = result.scalar() or 0
+            rows = {r["source_type"]: r for r in cur.fetchall()}
 
-        if purchase_count == 0:
-            return CheckResult(
-                name="pos_sync",
-                status=CheckStatus.WARN,
-                message=f"POS データなし: {target_date}（連携未実行の可能性）",
+        zero_sources: list[str] = []
+        for src in source_types:
+            r = rows.get(src)
+            if not r or (r["d0"] == 0 and r["d1"] == 0 and r["d2"] == 0):
+                zero_sources.append(src)
+
+        if zero_sources:
+            msg = (
+                f"*TrustEvent生成ゼロ（3日連続）* source_type={', '.join(zero_sources)}\n"
+                f"該当する入力経路の疎通を確認してください"
             )
+            slack_alert(msg, level="warning")
+            return CheckResult(name="trust_event_by_source", status=CheckStatus.WARN, message=msg)
 
         return CheckResult(
-            name="pos_sync",
+            name="trust_event_by_source",
             status=CheckStatus.OK,
-            message=f"POS 連携正常: {purchase_count} 件取り込み済み",
+            message="全 source_type でイベント生成あり",
         )
     except Exception as e:
         return CheckResult(
-            name="pos_sync",
+            name="trust_event_by_source",
             status=CheckStatus.ERROR,
-            message=f"POS 連携チェックエラー: {e}",
+            message=f"ソース別チェックエラー: {e}",
         )
 
 
-def run_daily_checks(
-    engine: Engine,
-    target_date: date | None = None,
-) -> list[CheckResult]:
+def run_daily_checks() -> list[CheckResult]:
     """全日次チェックを実行する。
-
-    Args:
-        engine: SQLAlchemy エンジン
-        target_date: 確認対象日
 
     Returns:
         CheckResult のリスト
     """
     results = [
-        check_pipeline_execution(engine, target_date),
-        check_needs_review_rate(engine, target_date),
-        check_pos_sync(engine, target_date),
+        check_batch_processed_count("ai_interpretation_batch"),
+        check_batch_processed_count("score_calculation_batch"),
+        check_claude_api_cost(),
+        check_trust_event_by_source(),
     ]
 
     for r in results:

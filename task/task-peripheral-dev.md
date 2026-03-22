@@ -37,18 +37,18 @@ main
 
 ### A-1：バッチ実行記録テーブルの追加
 
-- [ ] `git checkout feature/monitoring`
-- [ ] `git checkout demo/phase1 -- src/python/db/migrations/` で既存マイグレーションを取り込む
-- [ ] Alembicでマイグレーションファイルを新規作成する
+- [x] `git checkout feature/monitoring`
+- [x] `git checkout demo/phase1 -- src/python/db/migrations/` で既存マイグレーションを取り込む
+- [x] Alembicでマイグレーションファイルを新規作成する
   ```bash
   cd src/python
   alembic revision -m "add_batch_job_logs"
   ```
-- [ ] 生成されたファイルに以下を実装する（`docs/monitoring-impl.md` §1.1参照）
+- [x] 生成されたファイルに以下を実装する（`docs/monitoring-impl.md` §1.1参照）
   - `batch_job_logs` テーブルの `upgrade()` / `downgrade()`
   - カラム：`log_id`, `job_name`, `store_id`, `started_at`, `finished_at`, `status`, `processed_count`, `api_cost_jpy`, `error_message`, `created_at`
   - インデックス：`idx_batch_job_logs_job_name_started`
-- [ ] `alembic upgrade head` を実行してテーブル作成を確認する
+- [x] `alembic upgrade head` を実行してテーブル作成を確認する
   ```bash
   docker compose exec db psql -U postgres -d trust_platform -c "\d batch_job_logs"
   ```
@@ -57,11 +57,11 @@ main
 
 ### A-2：既存バッチへのジョブ記録追加
 
-- [ ] `src/python/batch/` 配下のAI解釈バッチに以下を追加する（`docs/monitoring-impl.md` §1.1参照）
+- [x] `src/python/batch/` 配下のAI解釈バッチに以下を追加する（`docs/monitoring-impl.md` §1.1参照）
   - バッチ冒頭に `record_job_start(conn, "ai_interpretation_batch")`
   - バッチ末尾に `record_job_end(conn, log_id, processed_count)`
   - `api_cost_jpy` を計算してログに記録する（Claude APIのusageトークンからコスト換算）
-- [ ] スコア算出バッチに同様の記録処理を追加する
+- [x] スコア算出バッチに同様の記録処理を追加する
   - バッチ冒頭に `record_job_start(conn, "score_calculation_batch")`
   - バッチ末尾に `record_job_end(conn, log_id, processed_count)`
 
@@ -72,43 +72,43 @@ main
 > `feature/monitoring` ブランチにすでに17ファイルがコミット済み。  
 > 既存の実装内容を `docs/monitoring-impl.md` の仕様と照合し、差分があれば修正する。
 
-- [ ] `src/python/monitoring/common.py` を確認・修正する
+- [x] `src/python/monitoring/common.py` を確認・修正する
   - `CheckResult`, `CheckStatus` の定義
   - `get_db()` コンテキストマネージャ
   - `slack_alert(message, level, channel)` の実装
   - 環境変数：`DATABASE_URL`, `SLACK_WEBHOOK_URL`, `SLACK_CHANNEL_OPS`, `SLACK_CHANNEL_PDM`
 
-- [ ] `src/python/monitoring/checks/critical.py` を確認・修正する（`docs/monitoring-impl.md` §2参照）
+- [x] `src/python/monitoring/checks/critical.py` を確認・修正する（`docs/monitoring-impl.md` §2参照）
   - `check_batch_duration(job_name, threshold_minutes=30)` ：前7日中央値×2倍超でアラート
   - `check_snapshot_completeness()` ：当日分Snapshotが全店舗に存在するか確認
   - `check_duplicate_trust_events()` ：同一`(source_type, source_id, trust_dimension)`の重複検知
   - `run_critical_checks(job_name)` ：上記3関数をまとめて呼び出す
 
-- [ ] `src/python/monitoring/checks/daily.py` を確認・修正する（`docs/monitoring-impl.md` §3参照）
+- [x] `src/python/monitoring/checks/daily.py` を確認・修正する（`docs/monitoring-impl.md` §3参照）
   - `check_batch_processed_count(job_name, drop_ratio=0.5)` ：前7日平均の50%未満でアラート
   - `check_claude_api_cost()` ：前7日平均の150%超でアラート
   - `check_trust_event_by_source()` ：source_type別に3日連続ゼロを検知
   - `run_daily_checks()` ：上記3関数をまとめて呼び出す
 
-- [ ] `src/python/monitoring/checks/weekly.py` を確認・修正する（`docs/monitoring-impl.md` §4参照）
+- [x] `src/python/monitoring/checks/weekly.py` を確認・修正する（`docs/monitoring-impl.md` §4参照）
   - `check_confidence_distribution()` ：`needs_review=true`率が前4週平均の1.5倍超でアラート
   - `check_is_reliable_progress()` ：`is_reliable` の逆転（true→false）を検知
   - `check_tag_input_rate()` ：週次の接客タグ入力件数を店舗別に集計・通知
   - `check_review_queue_backlog()` ：未レビュー件数50件超・7日超過で警告
   - `run_weekly_checks()` ：上記4関数をまとめて呼び出す
 
-- [ ] `src/python/monitoring/main_daily.py` を確認する
+- [x] `src/python/monitoring/main_daily.py` を確認する
   - Cloud Functions エントリポイント `daily_monitoring(request)` の実装
 
-- [ ] `src/python/monitoring/main_weekly.py` を確認する
+- [x] `src/python/monitoring/main_weekly.py` を確認する
   - Cloud Functions エントリポイント `weekly_monitoring(request)` の実装
 
 ---
 
 ### A-4：既存バッチへのcritical checks組み込み
 
-- [ ] AI解釈バッチ末尾に `run_critical_checks("ai_interpretation_batch")` を追加する
-- [ ] スコア算出バッチ末尾に `run_critical_checks("score_calculation_batch")` を追加する
+- [x] AI解釈バッチ末尾に `run_critical_checks("ai_interpretation_batch")` を追加する
+- [x] スコア算出バッチ末尾に `run_critical_checks("score_calculation_batch")` を追加する
 
 ```python
 # 追加例（バッチ末尾）
@@ -121,24 +121,24 @@ run_critical_checks("score_calculation_batch")
 
 ### A-5：テストの確認と補完
 
-- [ ] `tests/python/monitoring/test_critical.py` の5テストがすべてPASSすることを確認する
-- [ ] `tests/python/monitoring/test_daily.py` の6テストがすべてPASSすることを確認する
-- [ ] `tests/python/monitoring/test_weekly.py` の6テストがすべてPASSすることを確認する
-- [ ] A-2・A-4で追加したバッチ変更に対するテストが不足していれば追加する
-- [ ] `pytest tests/python/monitoring/ -v` を実行してすべてPASSを確認する
+- [x] `tests/python/monitoring/test_critical.py` の6テストがすべてPASSすることを確認する
+- [x] `tests/python/monitoring/test_daily.py` の7テストがすべてPASSすることを確認する
+- [x] `tests/python/monitoring/test_weekly.py` の8テストがすべてPASSすることを確認する
+- [x] A-2・A-4で追加したバッチ変更に対するテストが不足していれば追加する
+- [x] `pytest tests/python/monitoring/ -v` を実行してすべてPASSを確認する
 
 ---
 
 ### A-6：pyproject.tomlの確認
 
-- [ ] `requests>=2.31.0` が依存に追加されていることを確認する
-- [ ] `functions-framework` が依存に追加されていることを確認する（Cloud Functionsデプロイ用）
+- [x] `requests>=2.31.0` が依存に追加されていることを確認する
+- [x] `functions-framework` が依存に追加されていることを確認する（Cloud Functionsデプロイ用）
 
 ---
 
 ### A-7：ドキュメントのコミット
 
-- [ ] `docs/monitoring-impl.md` を `feature/monitoring` ブランチにコミットする
+- [x] `docs/monitoring-impl.md` を `feature/monitoring` ブランチにコミットする
   ```bash
   git add docs/monitoring-impl.md
   git commit -m "docs: add monitoring implementation guide"
@@ -149,10 +149,10 @@ run_critical_checks("score_calculation_batch")
 
 ### A-8：最終確認とPR準備
 
-- [ ] `pytest` 全体（161テスト以上）がPASSすることを確認する
-- [ ] `mypy src/python/monitoring/ --strict` がPASSすることを確認する
-- [ ] `ruff check src/python/monitoring/` がPASSすることを確認する
-- [ ] PRの説明に以下を記載する
+- [x] `pytest` 全体（165テスト）がPASSすることを確認する
+- [x] `mypy src/python/monitoring/ --strict` がPASSすることを確認する
+- [x] `ruff check src/python/monitoring/` がPASSすることを確認する
+- [x] PRの説明に以下を記載する
   - 追加した監視項目の一覧（🔴即時3件・🟡日次3件・🟢週次4件）
   - `batch_job_logs` テーブルの追加
   - 既存バッチへの影響範囲（record_job_start/end・run_critical_checksの追加）
