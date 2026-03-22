@@ -248,21 +248,21 @@ run_critical_checks("score_calculation_batch")
 
 ### D-1：マイグレーション
 
-- [ ] `feature/google-review` をチェックアウトする
+- [x] `feature/google-review` をチェックアウトする
   ```bash
   git checkout feature/google-review
   ```
-- [ ] Alembicでマイグレーションファイルを新規作成する
+- [x] Alembicでマイグレーションファイルを新規作成する
   ```bash
   cd src/python
   alembic revision -m "add_review_external_columns"
   ```
-- [ ] 生成されたファイルに以下を実装する（`docs/google-review-integration-v1.md` §3.1参照）
+- [x] 生成されたファイルに以下を実装する（`docs/google-review-integration-v1.md` §3.1参照）
   - `google_review_id VARCHAR(255) UNIQUE`
   - `processed_flag BOOLEAN NOT NULL DEFAULT false`
   - `processed_at TIMESTAMPTZ`
   - インデックス：`idx_review_external_processed (processed_flag, store_id)`
-- [ ] `alembic upgrade head` を実行してカラム追加を確認する
+- [x] `alembic upgrade head` を実行してカラム追加を確認する
   ```bash
   docker compose exec db psql -U postgres -d trust_platform \
     -c "\d review_external"
@@ -274,12 +274,12 @@ run_critical_checks("score_calculation_batch")
 
 既存の `src/python/utils/pii_masker.py` に外部レビュー向けマスキングを追加する。（`docs/google-review-integration-v1.md` §5参照）
 
-- [ ] `mask_review_text(text: str) -> str` 関数を追加する
+- [x] `mask_review_text(text: str) -> str` 関数を追加する
   - スタッフ氏名パターン（ひらがな・カタカナ）→ 「スタッフ」に置換
   - 電話番号パターン → 「[電話番号]」に置換
-- [ ] `reviewer_name` は保存しない方針を実装に反映する（保存時に「（匿名）」固定）
-- [ ] 既存のマスキングテストが引き続きPASSすることを確認する
-- [ ] `mask_review_text` の単体テストを `tests/python/utils/test_pii_masker.py` に追加する
+- [x] `reviewer_name` は保存しない方針を実装に反映する（保存時に「（匿名）」固定）
+- [x] 既存のマスキングテストが引き続きPASSすることを確認する
+- [x] `mask_review_text` の単体テストを `tests/python/utils/test_pii_masker.py` に追加する
   - スタッフ氏名が含まれるケース
   - 電話番号が含まれるケース
   - 両方含まれるケース
@@ -289,16 +289,16 @@ run_critical_checks("score_calculation_batch")
 
 ### D-3：専用プロンプトの実装
 
-- [ ] `src/python/ai/prompts/review_interpretation.py` を新規作成する（`docs/google-review-integration-v1.md` §6.2参照）
+- [x] `src/python/ai/prompts/review_interpretation.py` を新規作成する（`docs/google-review-integration-v1.md` §6.2参照）
   - `EXTERNAL_REVIEW_PROMPT_TEMPLATE` の定義
   - `PROMPT_VERSION` の設定（既存のバージョン管理に準拠）
-- [ ] プロンプトの出力スキーマを確認する
+- [x] プロンプトの出力スキーマを確認する
   - `mentions` 配列（複数次元対応）
   - `subjective_hints`（trait_signal / state_signal / meta_signal）
   - `overall_sentiment`
   - `review_type`（single_visit / multi_visit / comparison / unknown）
   - `contains_competitor_mention`
-- [ ] `tests/python/ai/test_review_prompt.py` を新規作成する
+- [x] `tests/python/ai/test_review_prompt.py` を新規作成する
   - Mockクライアントを使ったプロンプト出力の単体テスト
   - 複数次元が混在するレビューで `mentions` が複数生成されるケース
   - 星と本文の感情が乖離するケース（星3・本文ネガティブ等）
@@ -309,7 +309,7 @@ run_critical_checks("score_calculation_batch")
 
 ### D-4：TrustEvent生成ロジックの実装
 
-- [ ] `src/python/batch/review_interpreter.py` に `mentions_to_trust_events()` を実装する（`docs/google-review-integration-v1.md` §6.4参照）
+- [x] `src/python/batch/review_interpreter.py` に `mentions_to_trust_events()` を実装する（`docs/google-review-integration-v1.md` §6.4参照）
   - `mentions` 配列の各要素を1件の `TrustEvent` として生成する
   - `source_type='review'`・`source_id=review.review_id` を設定する
   - `trait_signal` / `state_signal` / `meta_signal` を `subjective_hints` から設定する
@@ -322,24 +322,24 @@ run_critical_checks("score_calculation_batch")
 
 `src/python/batch/review_fetcher.py` を新規作成する。（`docs/google-review-integration-v1.md` §4・§7.2参照）
 
-- [ ] OAuth 2.0 サービスアカウント認証を実装する
+- [x] OAuth 2.0 サービスアカウント認証を実装する
   - `google-auth` / `google-api-python-client` を `pyproject.toml` に追加する
   - 認証情報は環境変数 `GOOGLE_SERVICE_ACCOUNT_KEY_PATH` から取得する
-- [ ] `fetch_new_reviews(location_name, since)` を実装する
+- [x] `fetch_new_reviews(location_name, since)` を実装する
   - `pageSize=50` でページネーション対応
   - `updateTime > since` の差分取得
   - `since` は `batch_job_logs` の前回成功日時から取得する（なければ前日）
-- [ ] `run_review_fetch_batch(store_id, location_name)` を実装する
+- [x] `run_review_fetch_batch(store_id, location_name)` を実装する
   - バッチ冒頭に `record_job_start(conn, "review_fetch_batch")`
   - `google_review_id` による重複チェック
   - `mask_review_text()` によるPIIマスキング
   - `reviewer_name` は「（匿名）」固定で保存
   - バッチ末尾に `record_job_end()` と `run_critical_checks("review_fetch_batch")`
-- [ ] エラーハンドリングを実装する（`docs/google-review-integration-v1.md` §8参照）
+- [x] エラーハンドリングを実装する（`docs/google-review-integration-v1.md` §8参照）
   - Google API認証エラー：即時失敗・Slackアラート
   - クォータ超過：翌日リトライ（差分取得のため重複なし）
   - レビュー本文が空：スキップ（`processed_flag=true` で保存）
-- [ ] `tests/python/batch/test_review_fetcher.py` を新規作成する
+- [x] `tests/python/batch/test_review_fetcher.py` を新規作成する
   - Google APIのレスポンスをモックした取得テスト
   - 重複チェック（同一 `google_review_id` を2回処理しないこと）
   - PIIマスキングが適用されること
@@ -351,9 +351,9 @@ run_critical_checks("score_calculation_batch")
 
 `src/python/batch/review_interpreter.py` を新規作成する。（`docs/google-review-integration-v1.md` §7.3・§8参照）
 
-- [ ] `get_unprocessed_reviews(store_id)` を実装する
+- [x] `get_unprocessed_reviews(store_id)` を実装する
   - `processed_flag=false` のレコードを取得する
-- [ ] `run_review_interpret_batch(store_id)` を実装する
+- [x] `run_review_interpret_batch(store_id)` を実装する
   - バッチ冒頭に `record_job_start(conn, "review_interpret_batch")`
   - `EXTERNAL_REVIEW_PROMPT_TEMPLATE` を使ってプロンプトを生成する
   - 既存の抽象クライアント（`get_ai_client()`）経由でBedrock Claudeを呼び出す
@@ -361,13 +361,13 @@ run_critical_checks("score_calculation_batch")
   - `mark_review_processed()` で `processed_flag=true` / `processed_at=NOW()` を更新する
   - スロットリング：`await asyncio.sleep(0.5)`（既存バッチに準拠）
   - バッチ末尾に `record_job_end()` と `run_critical_checks("review_interpret_batch")`
-- [ ] Bedrockリトライを実装する（`docs/google-review-integration-v1.md` §8.2参照）
+- [x] Bedrockリトライを実装する（`docs/google-review-integration-v1.md` §8.2参照）
   - `tenacity` を `pyproject.toml` に追加する
   - 最大3回・指数バックオフ（min=2s / max=10s）
   - `ClientError`（ThrottlingException等）をリトライ対象にする
-- [ ] JSON解析エラー時の処理を実装する
+- [x] JSON解析エラー時の処理を実装する
   - `needs_review=true` で保存し、手動レビューキューに入れる
-- [ ] `tests/python/batch/test_review_interpreter.py` を新規作成する
+- [x] `tests/python/batch/test_review_interpreter.py` を新規作成する
   - Mockクライアントを使った解釈テスト
   - 1件のレビューから複数のTrustEventが生成されるケース
   - `processed_flag` が `true` に更新されること
@@ -378,24 +378,24 @@ run_critical_checks("score_calculation_batch")
 
 ### D-7：環境変数・設定の追加
 
-- [ ] `src/python/core/settings.py`（または設定ファイル）に以下を追加する
+- [x] `src/python/core/settings.py`（または設定ファイル）に以下を追加する
   ```python
   GOOGLE_SERVICE_ACCOUNT_KEY_PATH: str = ""
   GOOGLE_LOCATION_IDS: dict[str, str] = {}
     # キー: store_id、値: "accounts/{id}/locations/{id}"
   ```
-- [ ] `.env.example` に以下を追記する
+- [x] `.env.example` に以下を追記する
   ```bash
   GOOGLE_SERVICE_ACCOUNT_KEY_PATH=
   GOOGLE_LOCATION_ID_STORE_A=
   ```
-- [ ] `docker-compose.yml` の worker サービスに環境変数を追加する
+- [x] `docker-compose.yml` の worker サービスに環境変数を追加する
 
 ---
 
 ### D-8：API接続確認スクリプトの作成
 
-- [ ] `scripts/test_google_api.py` を新規作成する（`docs/google-review-integration-v1.md` §11 Step 1参照）
+- [x] `scripts/test_google_api.py` を新規作成する（`docs/google-review-integration-v1.md` §11 Step 1参照）
   ```python
   # 実行方法:
   # python scripts/test_google_api.py --store-id <STORE_A_ID>
@@ -442,13 +442,13 @@ run_critical_checks("score_calculation_batch")
 
 ### D-10：テストの最終確認とPR準備
 
-- [ ] `pytest tests/python/batch/test_review_fetcher.py -v` が PASS すること
-- [ ] `pytest tests/python/batch/test_review_interpreter.py -v` が PASS すること
-- [ ] `pytest tests/python/ai/test_review_prompt.py -v` が PASS すること
-- [ ] `pytest` 全体が PASS すること
-- [ ] `mypy src/python/batch/review_fetcher.py src/python/batch/review_interpreter.py --strict` が PASS すること
-- [ ] `ruff check src/python/batch/review_fetcher.py src/python/batch/review_interpreter.py` が PASS すること
-- [ ] PRの説明に以下を記載する
+- [x] `pytest tests/python/batch/test_review_fetcher.py -v` が PASS すること
+- [x] `pytest tests/python/batch/test_review_interpreter.py -v` が PASS すること
+- [x] `pytest tests/python/ai/test_review_prompt.py -v` が PASS すること
+- [x] `pytest` 全体が PASS すること
+- [x] `mypy src/python/batch/review_fetcher.py src/python/batch/review_interpreter.py --strict` が PASS すること
+- [x] `ruff check src/python/batch/review_fetcher.py src/python/batch/review_interpreter.py` が PASS すること
+- [x] PRの説明に以下を記載する
   - 追加したバッチ：`review_fetcher` / `review_interpreter`
   - 追加したマイグレーション：`add_review_external_columns`
   - 専用プロンプト：`review_interpretation.py`（既存プロンプトとの差分を記載）
@@ -460,13 +460,13 @@ run_critical_checks("score_calculation_batch")
 
 ### Phase 2開始前に揃っている状態
 
-- [ ] `feature/monitoring` がmainにマージ済み
-- [ ] `feature/hq-ux-design` がmainにマージ済み
-- [ ] `docs/update-readme-phase1` がmainにマージ済み
-- [ ] Cloud Scheduler・Cloud Functionsがステージングで動作確認済み
-- [ ] `batch_job_logs` テーブルが本番DBに適用済み
-- [ ] Slack通知が `#trust-platform-alerts`・`#trust-platform-weekly` に届くことを確認済み
-- [ ] 本部分析画面の設計仕様書（`docs/hq-analysis-ux-v1.md`）がmainに存在する
+- [x] `feature/monitoring` がmainにマージ済み
+- [x] `feature/hq-ux-design` がmainにマージ済み
+- [x] `docs/update-readme-phase1` がmainにマージ済み
+- [x] Cloud Scheduler・Cloud Functionsがステージングで動作確認済み
+- [x] `batch_job_logs` テーブルが本番DBに適用済み
+- [x] Slack通知が `#trust-platform-alerts`・`#trust-platform-weekly` に届くことを確認済み
+- [x] 本部分析画面の設計仕様書（`docs/hq-analysis-ux-v1.md`）がmainに存在する
 
 ---
 

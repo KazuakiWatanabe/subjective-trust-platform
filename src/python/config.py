@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     aws_region: str = "ap-northeast-1"
     bedrock_model_id: str = "anthropic.claude-sonnet-4-20250514-v1:0"
 
+    # --- Google Business Profile API ---
+    google_service_account_key_path: str = ""
+    google_location_ids: str = ""  # JSON 形式: {"store_id": "accounts/.../locations/..."}
+
     # --- API サーバー ---
     port: int = 8080
     log_level: str = "info"
